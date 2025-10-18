@@ -1,9 +1,10 @@
 # aigroup-mdtoword-mcp
 
-本地 Markdown 到 Word 文档转换工具，支持 MCP (Model Context Protocol) 协议通信。
+本地 Markdown 到 Word 文档转换工具，支持最新 MCP (Model Context Protocol) 协议。
 
-## 特性
+## ✨ 特性
 
+### 核心功能
 - ✅ 完整的 Markdown 语法支持（标题、段落、列表、表格、代码块、引用等）
 - 🎨 丰富的样式配置系统
 - 📋 多种预设模板（学术论文、商务报告、客户分析等）
@@ -14,10 +15,19 @@
 - 🎨 主题系统（统一颜色、字体、间距管理）
 - 📊 增强的表格样式（列宽控制、单元格对齐、斑马纹）
 - ⚡ 性能优化（智能缓存、批量处理）
-- 🔧 MCP 协议支持，易于集成到 AI 工具链
 - 💾 本地文件处理，无需云存储
 
-## 安装
+### MCP 协议特性 (v3.0.0)
+- 🚀 **最新 MCP SDK 1.20.1** - 使用最新的 TypeScript SDK
+- 📝 **Zod 类型验证** - 完整的输入输出类型安全
+- 🌐 **Streamable HTTP Transport** - 支持 HTTP 和 stdio 双传输方式
+- 🔄 **通知防抖** - 优化网络性能，减少不必要的通知
+- 📊 **结构化输出** - 工具返回结构化数据便于处理
+- 🎯 **动态资源** - 使用 ResourceTemplate 支持参数化资源
+- 🤖 **AI Sampling** - 集成 LLM 能力进行文档摘要等
+- 🏷️ **丰富元数据** - 所有工具、资源、提示都有清晰的 title 和描述
+
+## 📦 安装
 
 ### 全局安装
 
@@ -37,11 +47,11 @@ npm install aigroup-mdtoword-mcp
 npx aigroup-mdtoword-mcp
 ```
 
-## 使用方式
+## 🚀 使用方式
 
-### 1. 作为 MCP 服务器
+### 1. 作为 MCP 服务器 (Stdio)
 
-在 Roo Code 或其他支持 MCP 的工具中配置：
+在 Roo Code、Claude Desktop 或其他支持 MCP 的工具中配置：
 
 ```json
 {
@@ -49,13 +59,42 @@ npx aigroup-mdtoword-mcp
     "aigroup-mdtoword-mcp": {
       "command": "npx",
       "args": ["-y", "aigroup-mdtoword-mcp"],
-      "alwaysAllow": ["markdown_to_docx"]
+      "alwaysAllow": ["markdown_to_docx", "summarize_markdown"]
     }
   }
 }
 ```
 
-### 2. 基本用法示例
+### 2. 作为 HTTP 服务器
+
+启动 HTTP 服务器：
+
+```bash
+npm run server:http
+# 或
+node dist/http-server.js
+```
+
+服务器将在 `http://localhost:3000/mcp` 上运行。
+
+#### 在 MCP 客户端中连接
+
+```bash
+# 使用 MCP Inspector
+npx @modelcontextprotocol/inspector http://localhost:3000/mcp
+
+# 使用 Claude Code
+claude mcp add --transport http my-server http://localhost:3000/mcp
+
+# 使用 VS Code
+code --add-mcp '{"name":"my-server","type":"http","url":"http://localhost:3000/mcp"}'
+```
+
+#### CORS 支持
+
+HTTP 服务器已配置 CORS，支持浏览器客户端访问。生产环境请修改 `src/http-server.ts` 中的 `origin` 配置。
+
+### 3. 基本用法示例
 
 #### 最简单的转换
 
@@ -96,31 +135,27 @@ npx aigroup-mdtoword-mcp
   "markdown": "# 标题\n\n正文内容",
   "filename": "custom.docx",
   "styleConfig": {
-    "document": {
-      "defaultFont": "微软雅黑",
-      "defaultSize": 24
-    },
-    "paragraphStyles": {
-      "normal": {
-        "indent": {
-          "firstLine": 480
-        },
-        "alignment": "justify"
+    "theme": {
+      "name": "专业主题",
+      "colors": {
+        "primary": "2E74B5",
+        "text": "333333"
+      },
+      "fonts": {
+        "heading": "微软雅黑",
+        "body": "宋体"
       }
     },
-    "headingStyles": {
-      "h1": {
-        "font": "黑体",
-        "size": 36,
-        "color": "2E74B5",
-        "bold": true
-      }
+    "watermark": {
+      "text": "机密",
+      "opacity": 0.2,
+      "rotation": -45
     }
   }
 }
 ```
 
-## 预设模板
+## 📋 预设模板
 
 ### customer-analysis（默认）⭐
 客户分析模板，特点：
@@ -161,35 +196,92 @@ npx aigroup-mdtoword-mcp
 - 增强表格
 - 优化图片处理
 
-## MCP 工具
+## 🔧 MCP 工具
 
 ### markdown_to_docx
 
 将 Markdown 文档转换为 Word 文档（DOCX 格式）。
 
-**参数：**
+**输入参数（使用 Zod 验证）：**
 
-- `markdown` (string, 可选): Markdown 内容（与 inputPath 二选一）
-- `inputPath` (string, 可选): Markdown 文件路径（与 markdown 二选一）
-- `filename` (string, 必需): 输出文件名，必须以 .docx 结尾
-- `outputPath` (string, 可选): 输出目录，默认为当前工作目录
-- `template` (object, 可选): 模板配置
-  - `type`: 模板类型（preset）
-  - `presetId`: 预设模板 ID
-- `styleConfig` (object, 可选): 样式配置对象
+```typescript
+{
+  markdown?: string,           // Markdown内容（与inputPath二选一）
+  inputPath?: string,          // Markdown文件路径（与markdown二选一）
+  filename: string,            // 输出文件名，必须以.docx结尾
+  outputPath?: string,         // 输出目录，默认为当前工作目录
+  template?: {
+    type: 'preset',
+    presetId: string           // 预设模板ID
+  },
+  styleConfig?: {              // 完整的样式配置对象
+    theme?: { ... },
+    watermark?: { ... },
+    tableOfContents?: { ... },
+    headerFooter?: { ... },
+    tableStyles?: { ... },
+    imageStyles?: { ... }
+  }
+}
+```
 
-## MCP 资源
+**输出（结构化）：**
 
-### templates://list
-获取所有可用的预设模板列表
+```typescript
+{
+  success: boolean,
+  filename: string,
+  path: string,
+  size: number,
+  message?: string
+}
+```
 
-### templates://default
-获取默认模板信息
+### summarize_markdown
 
-### style-guide://complete
-获取完整的样式配置指南
+使用 AI 总结 Markdown 文档内容（演示 MCP Sampling 功能）。
 
-## MCP 提示
+**输入参数：**
+
+```typescript
+{
+  markdown: string,            // 要总结的Markdown内容
+  maxLength?: number          // 摘要最大长度（50-500字符，默认200）
+}
+```
+
+**输出（结构化）：**
+
+```typescript
+{
+  summary: string,
+  originalLength: number,
+  summaryLength: number
+}
+```
+
+**注意：** 此功能需要客户端支持 MCP sampling 能力。
+
+## 📚 MCP 资源
+
+### 静态资源
+
+- `templates://list` - 获取所有可用的预设模板列表
+- `templates://default` - 获取默认模板信息
+- `style-guide://complete` - 获取完整的样式配置指南
+
+### 动态资源（使用 ResourceTemplate）
+
+- `templates://{templateId}` - 获取特定模板的详细配置
+
+**示例：**
+```
+templates://academic
+templates://business
+templates://customer-analysis
+```
+
+## 💬 MCP 提示
 
 ### markdown_to_docx_help
 获取使用帮助和快速开始指南
@@ -197,9 +289,15 @@ npx aigroup-mdtoword-mcp
 ### markdown_to_docx_examples
 获取实用示例和最佳实践
 
-## 新增功能详解
+### create_document
+引导创建新文档（支持参数化）
 
-### 🎨 主题系统
+**参数：**
+- `documentType`: 'academic' | 'business' | 'technical' | 'report'
+
+## 🎨 新增功能详解
+
+### 主题系统
 
 主题系统允许统一管理文档的颜色、字体和间距：
 
@@ -228,7 +326,7 @@ npx aigroup-mdtoword-mcp
 }
 ```
 
-### 💧 水印功能
+### 水印功能
 
 为文档添加自定义水印：
 
@@ -247,7 +345,7 @@ npx aigroup-mdtoword-mcp
 }
 ```
 
-### 📄 页眉页脚
+### 页眉页脚
 
 自定义页眉和页脚：
 
@@ -269,7 +367,7 @@ npx aigroup-mdtoword-mcp
 }
 ```
 
-### 📑 自动目录
+### 自动目录
 
 自动生成文档目录：
 
@@ -287,7 +385,7 @@ npx aigroup-mdtoword-mcp
 }
 ```
 
-### 📊 增强的表格样式
+### 增强的表格样式
 
 支持更丰富的表格配置：
 
@@ -312,7 +410,7 @@ npx aigroup-mdtoword-mcp
 }
 ```
 
-### 🖼️ 图片处理优化
+### 图片处理优化
 
 图片处理现在更加智能：
 
@@ -336,27 +434,7 @@ npx aigroup-mdtoword-mcp
 }
 ```
 
-**新增特性：**
-- ✅ 自适应尺寸调整
-- ✅ 自动格式检测
-- ✅ 加载失败占位符
-- ✅ 支持更多图片格式（jpg, png, gif, bmp, svg, webp）
-
-### ⚡ 性能优化
-
-项目包含多项性能优化：
-
-1. **智能缓存** - 样式配置自动缓存，避免重复计算
-2. **批量处理** - 图片批量加载和处理
-3. **增量验证** - 只验证变更的配置项
-4. **错误恢复** - 自动修复常见配置错误
-
-查看缓存统计：
-```
-📊 [缓存统计] 命中率: 85.5%, 大小: 12
-```
-
-## 样式配置说明
+## 📊 样式配置说明
 
 ### 单位换算
 
@@ -383,7 +461,7 @@ npx aigroup-mdtoword-mcp
 - 28号字体 2字符: 560缇
 - 20号字体 2字符: 400缇
 
-## 开发
+## 🔧 开发
 
 ### 构建项目
 
@@ -397,37 +475,36 @@ npm run build
 npm run dev
 ```
 
+### 启动 Stdio 服务器
+
+```bash
+npm run server:stdio
+```
+
+### 启动 HTTP 服务器
+
+```bash
+npm run server:http
+```
+
 ### 运行测试
 
 ```bash
 npm test
 ```
 
-## 系统要求
+## 📋 系统要求
 
 - Node.js >= 18.0.0
 - npm >= 8.0.0
 
-## 支持的操作系统
+## 🖥️ 支持的操作系统
 
 - Windows
 - macOS
 - Linux
 
-## 许可证
-
-MIT
-
-## 问题反馈
-
-如有问题，请在 GitHub Issues 中提交：
-https://github.com/aigroup/aigroup-mdtoword-mcp/issues
-
-## 贡献
-
-欢迎提交 Pull Request！
-
-## 最佳实践
+## 🎯 最佳实践
 
 ### 使用主题提高一致性
 
@@ -471,8 +548,29 @@ https://github.com/aigroup/aigroup-mdtoword-mcp/issues
 1. 对于相同配置的多次转换，缓存会自动提高性能
 2. 图片尽量使用合适的尺寸，避免过大
 3. 使用预设模板可以获得最佳性能
+4. HTTP 服务器支持并发请求，适合批量处理
 
-## 更新日志
+## 🚀 新版本特性
+
+### 3.0.0 (2025-01-18)
+
+#### MCP 协议升级
+- 🎉 **升级到 MCP SDK 1.20.1** - 使用最新的 TypeScript SDK
+- 📝 **Zod 类型验证** - 所有工具输入输出都有完整的类型安全
+- 🌐 **Streamable HTTP Transport** - 新增 HTTP 服务器支持
+- 🔄 **通知防抖** - 自动合并相同类型的通知，优化性能
+- 📊 **结构化输出** - 工具返回 structuredContent 便于程序处理
+
+#### 新 API
+- ✨ **registerTool/registerResource/registerPrompt** - 使用新的高级 API
+- 🎯 **ResourceTemplate** - 支持动态资源和参数化 URI
+- 🏷️ **title 元数据** - 所有组件都有清晰的显示名称
+- 🤖 **Sampling 支持** - 演示 AI 辅助功能（文档摘要）
+
+#### 开发体验
+- 🔧 **更好的错误处理** - 详细的错误信息和恢复建议
+- 📖 **完善的文档** - 包含所有新特性的使用示例
+- 🧪 **类型安全** - 完整的 TypeScript 类型定义
 
 ### 2.0.0 (2025-01-18)
 
@@ -494,3 +592,31 @@ https://github.com/aigroup/aigroup-mdtoword-mcp/issues
 - 📋 内置 5 种预设模板
 - 🔧 完整的 MCP 协议支持
 - 💾 本地文件处理，无需云存储
+
+## 📄 许可证
+
+MIT
+
+## 🐛 问题反馈
+
+如有问题，请在 GitHub Issues 中提交：
+https://github.com/aigroup/aigroup-mdtoword-mcp/issues
+
+## 🤝 贡献
+
+欢迎提交 Pull Request！
+
+## 📚 相关资源
+
+- [MCP 官方文档](https://modelcontextprotocol.io)
+- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
+- [Zod 文档](https://zod.dev)
+- [docx 库文档](https://docx.js.org)
+
+## 👨‍💻 作者
+
+AI Group - [jackdark425@gmail.com](mailto:jackdark425@gmail.com)
+
+---
+
+⭐ 如果这个项目对你有帮助，请给一个 Star！
