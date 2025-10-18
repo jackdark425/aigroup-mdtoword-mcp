@@ -1,6 +1,6 @@
 {
   "name": "aigroup-mdtoword-mcp",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "本地 Markdown 到 Word 文档转换工具，支持最新 MCP 协议特性",
   "keywords": [
     "markdown",
