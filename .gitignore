@@ -41,3 +41,6 @@ coverage/
 *.docx
 output/
 test-output/
+
+# Roo配置文件
+.roo/
