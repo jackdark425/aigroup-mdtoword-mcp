@@ -1,7 +1,12 @@
 import MarkdownIt from 'markdown-it';
+import fs from 'fs';
 import { MarkdownConverter } from '../types/index.js';
 import { StyleConfig, StyleContext, TextStyle, ParagraphStyle, HeadingStyle } from '../types/style.js';
 import { styleEngine } from '../utils/styleEngine.js';
+import { ImageProcessor } from '../utils/imageProcessor.js';
+import { WatermarkProcessor } from '../utils/watermarkProcessor.js';
+import { TOCGenerator } from '../utils/tocGenerator.js';
+import { ErrorHandler } from '../utils/errorHandler.js';
 
 // 使用新版docx API
 import {
@@ -13,18 +18,29 @@ import {
   Table,
   TableRow,
   TableCell,
-  ImageRun
+  ImageRun,
+  AlignmentType,
+  Header,
+  Footer,
+  PageNumber,
+  TableOfContents
 } from 'docx';
-import fs from 'fs';
-import fetch from 'node-fetch';
 
 export class DocxMarkdownConverter implements MarkdownConverter {
   private md: MarkdownIt;
   private effectiveStyleConfig: StyleConfig;
+  private errorHandler: ErrorHandler;
+  private tocGenerator: TOCGenerator;
 
   constructor(styleConfig?: StyleConfig) {
     const constructorStartTime = Date.now();
     console.log(`🚀 [转换器] 开始初始化 - ${new Date().toISOString()}`);
+    
+    // 初始化错误处理器
+    this.errorHandler = new ErrorHandler();
+    
+    // 初始化目录生成器
+    this.tocGenerator = new TOCGenerator();
     
     const mdInitStartTime = Date.now();
     this.md = new MarkdownIt({
@@ -46,11 +62,24 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     console.log(`⏱️ [转换器] 样式配置验证耗时: ${Date.now() - validationStartTime}ms`);
     
     if (!validation.valid && validation.errors) {
-      console.warn('样式配置验证失败:', validation.errors);
+      console.warn('❌ 样式配置验证失败:', validation.errors);
+      validation.errors.forEach(err => {
+        this.errorHandler.addError('STYLE_VALIDATION', err);
+      });
     }
     if (validation.warnings) {
-      console.warn('样式配置警告:', validation.warnings);
+      console.warn('⚠️ 样式配置警告:', validation.warnings);
+      validation.warnings.forEach(warn => {
+        this.errorHandler.addWarning('STYLE_WARNING', warn);
+      });
     }
+    if (validation.suggestions) {
+      console.info('💡 样式配置建议:', validation.suggestions);
+    }
+    
+    // 打印缓存统计
+    const cacheStats = styleEngine.getCacheStats();
+    console.log(`📊 [缓存统计] 命中率: ${cacheStats.hitRate}, 大小: ${cacheStats.size}`);
     
     const constructorTime = Date.now() - constructorStartTime;
     console.log(`🏁 [转换器] 初始化完成，总耗时: ${constructorTime}ms`);
@@ -65,10 +94,22 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     const parseTime = Date.now() - parseStartTime;
     console.log(`⏱️ [转换器] Markdown解析耗时: ${parseTime}ms，生成 ${tokens.length} 个token`);
     
+    // 如果启用了目录，提取标题
+    if (this.effectiveStyleConfig.tableOfContents?.enabled) {
+      const headings = this.tocGenerator.extractHeadings(markdown);
+      console.log(`📑 [目录] 提取到 ${headings.length} 个标题`);
+    }
+    
     const docCreateStartTime = Date.now();
     const doc = await this.createDocument(tokens);
     const docCreateTime = Date.now() - docCreateStartTime;
     console.log(`⏱️ [转换器] 文档创建耗时: ${docCreateTime}ms`);
+    
+    // 打印错误处理统计
+    if (this.errorHandler.hasErrors() || this.errorHandler.hasWarnings()) {
+      console.log(`\n⚠️ [转换警告]`);
+      this.errorHandler.printAll();
+    }
     
     const packStartTime = Date.now();
     const buffer = await Packer.toBuffer(doc);
@@ -82,10 +123,57 @@ export class DocxMarkdownConverter implements MarkdownConverter {
   }
 
   private async createDocument(tokens: any[]): Promise<Document> {
-    const children = await this.processTokens(tokens);
+    let children = await this.processTokens(tokens);
     const docStyle = this.effectiveStyleConfig.document;
     
-    return new Document({
+    // 如果启用目录，在内容前插入目录
+    if (this.effectiveStyleConfig.tableOfContents?.enabled) {
+      const tocConfig = this.effectiveStyleConfig.tableOfContents;
+      const tocElements: Paragraph[] = [];
+      
+      // 添加目录标题
+      tocElements.push(TOCGenerator.createTOCTitle(tocConfig));
+      
+      // 添加目录
+      tocElements.push(TOCGenerator.createTOC(tocConfig) as any);
+      
+      // 添加分页符
+      tocElements.push(new Paragraph({
+        text: '',
+        pageBreakBefore: true
+      }));
+      
+      children = [...tocElements, ...children];
+      console.log(`📑 [目录] 已添加目录到文档`);
+    }
+    
+    // 准备节配置
+    const sectionConfig: any = {
+      properties: {
+        page: {
+          size: this.getPageSize(),
+          margin: this.getPageMargins()
+        }
+      },
+      children: children
+    };
+
+    // 添加页眉
+    if (this.effectiveStyleConfig.headerFooter?.header) {
+      sectionConfig.headers = {
+        default: this.createHeader(this.effectiveStyleConfig.headerFooter.header)
+      };
+    }
+
+    // 添加页脚
+    if (this.effectiveStyleConfig.headerFooter?.footer) {
+      sectionConfig.footers = {
+        default: this.createFooter(this.effectiveStyleConfig.headerFooter.footer)
+      };
+    }
+
+    // 准备文档配置
+    const docConfig: any = {
       styles: {
         default: {
           document: {
@@ -103,15 +191,106 @@ export class DocxMarkdownConverter implements MarkdownConverter {
           heading6: this.createDocxHeadingStyle(6)
         }
       },
-      sections: [{
-        properties: {
-          page: {
-            size: this.getPageSize(),
-            margin: this.getPageMargins()
+      sections: [sectionConfig]
+    };
+
+    // 添加水印
+    if (this.effectiveStyleConfig.watermark) {
+      docConfig.background = WatermarkProcessor.createWatermark(this.effectiveStyleConfig.watermark);
+    }
+
+    return new Document(docConfig);
+  }
+
+  /**
+   * 创建页眉
+   */
+  private createHeader(headerConfig: NonNullable<typeof this.effectiveStyleConfig.headerFooter>['header']): Header {
+    if (!headerConfig) {
+      return new Header({
+        children: []
+      });
+    }
+
+    const alignment = headerConfig.alignment === 'both' ? AlignmentType.BOTH :
+                     headerConfig.alignment === 'center' ? AlignmentType.CENTER :
+                     headerConfig.alignment === 'right' ? AlignmentType.RIGHT :
+                     AlignmentType.LEFT;
+
+    return new Header({
+      children: [
+        new Paragraph({
+          text: headerConfig.content,
+          alignment: alignment,
+          border: headerConfig.border?.bottom ? {
+            bottom: {
+              style: headerConfig.border.bottom.style === 'dash' ? 'dashed' : headerConfig.border.bottom.style,
+              size: headerConfig.border.bottom.size,
+              color: headerConfig.border.bottom.color
+            }
+          } : undefined
+        })
+      ]
+    });
+  }
+
+  /**
+   * 创建页脚
+   */
+  private createFooter(footerConfig: NonNullable<typeof this.effectiveStyleConfig.headerFooter>['footer']): Footer {
+    if (!footerConfig) {
+      return new Footer({
+        children: []
+      });
+    }
+
+    const alignment = footerConfig.alignment === 'both' ? AlignmentType.BOTH :
+                     footerConfig.alignment === 'center' ? AlignmentType.CENTER :
+                     footerConfig.alignment === 'right' ? AlignmentType.RIGHT :
+                     AlignmentType.LEFT;
+
+    const children: Paragraph[] = [];
+
+    // 添加页脚内容
+    if (footerConfig.showPageNumber) {
+      children.push(new Paragraph({
+        alignment: alignment,
+        children: [
+          new TextRun({
+            text: footerConfig.content + ' ',
+            ...this.convertTextStyleToDocx(footerConfig.textStyle || {})
+          }),
+          new TextRun({
+            children: [PageNumber.CURRENT]
+          }),
+          new TextRun({
+            text: footerConfig.pageNumberFormat ? ` ${footerConfig.pageNumberFormat}` : ''
+          })
+        ],
+        border: footerConfig.border?.top ? {
+          top: {
+            style: footerConfig.border.top.style === 'dash' ? 'dashed' : footerConfig.border.top.style,
+            size: footerConfig.border.top.size,
+            color: footerConfig.border.top.color
           }
-        },
-        children: children
-      }]
+        } : undefined
+      }));
+    } else {
+      children.push(new Paragraph({
+        text: footerConfig.content,
+        alignment: alignment,
+        border: footerConfig.border?.top ? {
+          top: {
+            style: footerConfig.border.top.style === 'dash' ? 'dashed' : footerConfig.border.top.style,
+            size: footerConfig.border.top.size,
+            color: footerConfig.border.top.color
+          }
+        } : undefined
+      }));
+    }
+
+    return new Footer({
+      children: children
     });
   }
 
@@ -657,11 +836,17 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     const isHeaderRow = (index: number) => index === 0; // 第一行作为表头
     const tableStyle = this.effectiveStyleConfig.tableStyles?.default;
     
+    // 计算列宽
+    const columnCount = rows[0]?.length || 0;
+    const columnWidths = tableStyle?.columnWidths ||
+      Array(columnCount).fill(Math.floor(10000 / columnCount)); // 平均分配宽度
+    
     return new Table({
       width: tableStyle?.width || {
         size: 100,
         type: 'pct'
       },
+      columnWidths: columnWidths,
       borders: tableStyle?.borders ? {
         top: tableStyle.borders.top ? {
           style: tableStyle.borders.top.style === "dash" ? "dashed" : tableStyle.borders.top.style,
@@ -702,19 +887,44 @@ export class DocxMarkdownConverter implements MarkdownConverter {
         insideVertical: { style: 'single', size: 2, color: 'DDDDDD' }
       },
       rows: rows.map((row, rowIndex) => new TableRow({
-        children: row.map(cellContent => new TableCell({
-          children: [new Paragraph({
-            children: cellContent,
-            spacing: {
-              line: 360 // 1.5倍行距
-            },
-            alignment: tableStyle?.alignment || 'center'
-          })],
+        children: row.map((cellContent, cellIndex) => {
+          // 确定单元格对齐方式
+          const cellHorizontalAlign = isHeaderRow(rowIndex)
+            ? (tableStyle?.headerStyle?.alignment || tableStyle?.alignment || 'center')
+            : (tableStyle?.cellAlignment?.horizontal || tableStyle?.alignment || 'left');
+          
+          const cellVerticalAlign = tableStyle?.cellAlignment?.vertical || 'center';
+          
+          // 应用斑马纹样式
+          const isOddRow = rowIndex % 2 === 1;
+          const rowShading = tableStyle?.stripedRows?.enabled
+            ? (isOddRow
+                ? tableStyle.stripedRows.oddRowShading
+                : tableStyle.stripedRows.evenRowShading)
+            : undefined;
+          
+          return new TableCell({
+            children: [new Paragraph({
+              children: cellContent,
+              spacing: {
+                line: 360 // 1.5倍行距
+              },
+              alignment: cellHorizontalAlign === 'center' ? AlignmentType.CENTER :
+                        cellHorizontalAlign === 'right' ? AlignmentType.RIGHT :
+                        AlignmentType.LEFT
+            })],
+            verticalAlign: cellVerticalAlign === 'bottom' ? 'bottom' :
+                          cellVerticalAlign === 'top' ? 'top' :
+                          'center',
           shading: isHeaderRow(rowIndex) ? {
             fill: tableStyle?.headerStyle?.shading || 'E0E0E0',
             type: 'solid',
             color: tableStyle?.headerStyle?.shading || 'E0E0E0'
-          } : undefined,
+          } : (rowShading ? {
+            fill: rowShading,
+            type: 'solid',
+            color: rowShading
+          } : undefined),
           borders: isHeaderRow(rowIndex) ? (tableStyle?.borders ? {
             top: tableStyle.borders.top ? {
               style: tableStyle.borders.top.style === "dash" ? "dashed" : tableStyle.borders.top.style,
@@ -747,8 +957,13 @@ export class DocxMarkdownConverter implements MarkdownConverter {
             bottom: 100,
             left: 100,
             right: 100
-          }
-        })),
+          },
+          width: columnWidths[cellIndex] ? {
+            size: columnWidths[cellIndex],
+            type: 'dxa'
+          } : undefined
+        });
+        }),
         tableHeader: isHeaderRow(rowIndex) // 标记表头行
       }))
     });
@@ -785,88 +1000,44 @@ export class DocxMarkdownConverter implements MarkdownConverter {
       console.log(`🖼️ [图片处理] 开始处理图片: ${src}`);
       console.log(`   - Alt文本: ${alt}`);
       console.log(`   - 标题: ${title}`);
-      console.log(`   - 样式配置:`, imageStyle);
       
-      // 处理不同类型的图片源
-      let imageData: Buffer | string;
-      let loadError: string | null = null;
+      // 使用ImageProcessor加载图片
+      const { data: imageData, type: imageType, error: loadError } = await ImageProcessor.loadImageData(src);
       
-      if (src.startsWith('data:')) {
-        // Base64图片
-        console.log(`   - 图片类型: Base64编码`);
-        const base64Parts = src.split('base64,');
-        if (base64Parts.length < 2) {
-          console.error(`   ❌ Base64格式错误: 缺少base64标记`);
-          loadError = 'Base64格式错误';
-        } else {
-          imageData = base64Parts[1];
-          console.log(`   - Base64数据长度: ${imageData.length} 字符`);
-        }
-      } else if (src.startsWith('http')) {
-        // 网络图片
-        console.log(`   - 图片类型: 网络图片`);
-        console.log(`   - 开始下载图片...`);
-        const downloadStartTime = Date.now();
-        try {
-          const response = await fetch(src);
-          if (!response.ok) {
-            console.error(`   ❌ 图片下载失败: HTTP ${response.status} ${response.statusText}`);
-            loadError = `HTTP ${response.status}`;
-          } else {
-            const arrayBuffer = await response.arrayBuffer();
-            imageData = Buffer.from(arrayBuffer);
-            const downloadTime = Date.now() - downloadStartTime;
-            console.log(`   ✅ 图片下载成功，耗时: ${downloadTime}ms，大小: ${imageData.length} 字节`);
-          }
-        } catch (fetchError) {
-          console.error(`   ❌ 图片下载异常:`, fetchError);
-          loadError = '网络连接失败';
-        }
-      } else {
-        // 本地图片
-        console.log(`   - 图片类型: 本地文件`);
-        if (!fs.existsSync(src)) {
-          console.error(`   ❌ 本地图片文件不存在: ${src}`);
-          loadError = '文件不存在';
-        } else {
-          try {
-            imageData = fs.readFileSync(src);
-            console.log(`   ✅ 本地图片读取成功，大小: ${imageData.length} 字节`);
-          } catch (readError) {
-            console.error(`   ❌ 本地图片读取失败:`, readError);
-            loadError = '文件读取失败';
-          }
-        }
+      // 验证图片格式
+      if (!ImageProcessor.isSupportedFormat(imageType, imageStyle?.supportedFormats)) {
+        console.error(`   ❌ 不支持的图片格式: ${imageType}`);
+        const dimensions = ImageProcessor.calculateDimensions(undefined, undefined, imageStyle);
+        return this.createPlaceholderImageRun(
+          src, alt, title,
+          `不支持的图片格式: ${imageType || '未知'}`,
+          dimensions
+        );
       }
 
       // 如果图片加载失败，创建占位符
-      if (loadError || !imageData!) {
+      if (loadError || !imageData || !imageType) {
         console.log(`   ⚠️ 创建图片占位符...`);
-        return this.createPlaceholderImageRun(src, alt, title, loadError || '图片加载失败', imageStyle);
+        const dimensions = ImageProcessor.calculateDimensions(undefined, undefined, imageStyle);
+        return this.createPlaceholderImageRun(
+          src, alt, title,
+          loadError || '图片加载失败',
+          dimensions
+        );
       }
 
-      const imageType = this.getImageType(src);
-      console.log(`   - 识别的图片格式: ${imageType || '未知'}`);
-      if (!imageType) {
-        console.error(`   ❌ 无法识别图片格式: ${src}`);
-        loadError = '无法识别图片格式';
-      }
-
-      // 如果图片加载失败，创建占位符
-      if (loadError || !imageData! || !imageType) {
-        console.log(`   ⚠️ 创建图片占位符...`);
-        return this.createPlaceholderImageRun(src, alt, title, loadError || '图片加载失败', imageStyle);
-      }
+      console.log(`   ✅ 图片加载成功，格式: ${imageType}`);
+      
+      // 计算图片尺寸
+      const dimensions = ImageProcessor.calculateDimensions(undefined, undefined, imageStyle);
+      console.log(`   - 计算尺寸: ${dimensions.width}x${dimensions.height}`);
 
       // 创建图片运行对象
       console.log(`   - 创建ImageRun对象...`);
       const imageRunConfig = imageType === 'svg' ? {
         type: 'svg' as const,
         data: imageData,
-        transformation: {
-          width: imageStyle?.width || 400,
-          height: imageStyle?.height || (imageStyle?.width || 400) * 0.667, // 默认3:2比例（适合大多数照片）
-        },
+        transformation: dimensions,
         altText: {
           title: title,
           description: token.content || '',
@@ -879,10 +1050,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
       } : {
         type: imageType as 'jpg' | 'png' | 'gif' | 'bmp',
         data: imageData,
-        transformation: {
-          width: imageStyle?.width || 400,
-          height: imageStyle?.height || (imageStyle?.width || 400) * 0.667, // 默认3:2比例（适合大多数照片）
-        },
+        transformation: dimensions,
         altText: {
           title: title,
           description: token.content || '',
@@ -905,7 +1073,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
           type: 'solidFill' as const,
           solidFillType: 'rgb' as const,
           value: imageStyle.border.color || '000000',
-          width: this.convertMillimetersToTwip(imageStyle.border.width || 1)
+          width: ImageProcessor.convertMillimetersToTwip(imageStyle.border.width || 1)
         } : undefined
       };
 
@@ -925,7 +1093,8 @@ export class DocxMarkdownConverter implements MarkdownConverter {
         console.error(`   ❌ ImageRun创建失败:`, imageRunError);
         // 如果创建失败（比如无效的Base64），返回占位符
         console.log(`   ⚠️ 由于ImageRun创建失败，创建占位符...`);
-        return this.createPlaceholderImageRun(src, alt, title, 'ImageRun创建失败', imageStyle);
+        const dimensions = ImageProcessor.calculateDimensions(undefined, undefined, imageStyle);
+        return this.createPlaceholderImageRun(src, alt, title, 'ImageRun创建失败', dimensions);
       }
 
       const processTime = Date.now() - imageStartTime;
@@ -1005,7 +1174,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
         }
       }
 
-      const imageType = this.getImageType(src);
+      const imageType = ImageProcessor['getImageTypeFromUrl'](src);
       console.log(`   - 识别的图片格式: ${imageType || '未知'}`);
       if (!imageType) {
         console.error(`   ❌ 无法识别图片格式: ${src}`);
@@ -1059,7 +1228,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
           type: 'solidFill' as const,
           solidFillType: 'rgb' as const,
           value: imageStyle.border.color || '000000',
-          width: this.convertMillimetersToTwip(imageStyle.border.width || 1)
+          width: ImageProcessor.convertMillimetersToTwip(imageStyle.border.width || 1)
         } : undefined
       };
 
@@ -1120,47 +1289,31 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     }
   }
 
-  private convertMillimetersToTwip(mm: number): number {
-    return Math.round(mm * 56.692);
-  }
 
   /**
    * 创建占位符图片
    */
-  private createPlaceholderImageRun(src: string, alt: string, title: string, errorMessage: string, imageStyle: any): ImageRun {
-    // 创建一个简单的SVG占位符
-    const width = imageStyle?.width || 400;
-    const height = imageStyle?.height || (imageStyle?.width || 400) * 0.667; // 默认3:2比例（适合大多数照片）
-    
-    const placeholderSvg = `
-      <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="${width}" height="${height}" fill="#f0f0f0" stroke="#cccccc" stroke-width="2"/>
-        <text x="50%" y="40%" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#666666">
-          图片无法加载
-        </text>
-        <text x="50%" y="50%" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#999999">
-          ${errorMessage}
-        </text>
-        <text x="50%" y="60%" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#999999">
-          ${alt}
-        </text>
-        <text x="50%" y="70%" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" fill="#bbbbbb">
-          ${src.length > 50 ? src.substring(0, 47) + '...' : src}
-        </text>
-      </svg>
-    `;
-
-    const svgBuffer = Buffer.from(placeholderSvg, 'utf-8');
+  private createPlaceholderImageRun(
+    src: string,
+    alt: string,
+    title: string,
+    errorMessage: string,
+    dimensions: { width: number; height: number }
+  ): ImageRun {
+    const svgBuffer = ImageProcessor.createPlaceholderSvg(
+      dimensions.width,
+      dimensions.height,
+      errorMessage,
+      alt,
+      src
+    );
     
     console.log(`   ✅ 占位符SVG创建成功，大小: ${svgBuffer.length} 字节`);
     
     return new ImageRun({
       type: 'svg',
       data: svgBuffer,
-      transformation: {
-        width: width,
-        height: height,
-      },
+      transformation: dimensions,
       altText: {
         title: title || '图片加载失败',
         description: `${alt} - ${errorMessage}`,
@@ -1171,55 +1324,6 @@ export class DocxMarkdownConverter implements MarkdownConverter {
         data: Buffer.from('') // 空缓冲区作为占位符
       }
     });
-  }
-
-  private getImageType(src: string): 'jpg' | 'png' | 'gif' | 'bmp' | 'svg' | null {
-    // 先检查data URL
-    if (src.startsWith('data:')) {
-      if (src.startsWith('data:image/jpeg') || src.startsWith('data:image/jpg')) return 'jpg';
-      if (src.startsWith('data:image/png')) return 'png';
-      if (src.startsWith('data:image/gif')) return 'gif';
-      if (src.startsWith('data:image/bmp')) return 'bmp';
-      if (src.startsWith('data:image/svg+xml')) return 'svg';
-      console.warn(`   ⚠️ 未知的data URL图片类型: ${src.substring(0, 50)}...`);
-      return null;
-    }
-    
-    // 先检查特殊的URL模式
-    // 处理支付宝图片URL
-    if (src.includes('mdn.alipayobjects.com')) {
-      const alipayImageRegex = /mdn\.alipayobjects\.com\/one_clip\/afts\/img\/[^\/]+\/original$/i;
-      console.log(`   ℹ️ 检测到支付宝域名，进行匹配测试: 
-         URL: ${src}
-         正则: ${alipayImageRegex}
-         匹配结果: ${alipayImageRegex.test(src)}`);
-      if (alipayImageRegex.test(src)) {
-        console.log(`   ℹ️ 支付宝图片URL，作为PNG处理`);
-        return 'png';
-      }
-    }
-    
-    // 检查文件扩展名
-    const ext = src.split('.').pop()?.toLowerCase();
-    const urlWithoutQuery = src.split('?')[0]; // 移除查询参数
-    const cleanExt = urlWithoutQuery.split('.').pop()?.toLowerCase();
-    
-    switch (cleanExt || ext) {
-      case 'jpg':
-      case 'jpeg': return 'jpg';
-      case 'png': return 'png';
-      case 'gif': return 'gif';
-      case 'bmp': return 'bmp';
-      case 'svg': return 'svg';
-      default:
-        // 对于没有扩展名的URL（如Unsplash），默认尝试作为JPEG处理
-        if (src.includes('unsplash.com') || src.includes('placeholder.com')) {
-          console.log(`   ℹ️ 无扩展名的图片URL，尝试作为JPEG处理`);
-          return 'jpg';
-        }
-        console.warn(`   ⚠️ 未知的图片扩展名: ${cleanExt || ext}`);
-        return null;
-    }
   }
 
   private async extractTableData(tokens: any[], startIndex: number): Promise<{ rows: any[][][]; endIndex: number }> {

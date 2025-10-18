@@ -110,6 +110,8 @@ export interface TableStyle {
     /** 宽度类型 */
     type: 'auto' | 'pct' | 'dxa';
   };
+  /** 列宽配置 */
+  columnWidths?: number[];
   /** 表格边框 */
   borders?: {
     top?: BorderStyle;
@@ -134,6 +136,24 @@ export interface TableStyle {
     shading?: string;
     /** 表头文字样式 */
     textStyle?: TextStyle;
+    /** 表头对齐方式 */
+    alignment?: 'left' | 'center' | 'right';
+  };
+  /** 单元格对齐方式 */
+  cellAlignment?: {
+    /** 水平对齐 */
+    horizontal?: 'left' | 'center' | 'right';
+    /** 垂直对齐 */
+    vertical?: 'top' | 'center' | 'bottom';
+  };
+  /** 斑马纹样式 */
+  stripedRows?: {
+    /** 是否启用 */
+    enabled?: boolean;
+    /** 奇数行背景色 */
+    oddRowShading?: string;
+    /** 偶数行背景色 */
+    evenRowShading?: string;
   };
 }
 
@@ -180,17 +200,30 @@ export interface BlockquoteStyle extends ParagraphStyle {
  * 图片样式配置接口
  */
 export interface ImageStyle {
+    /** 图片宽度（缇为单位） */
     width?: number;
+    /** 图片高度（缇为单位） */
     height?: number;
+    /** 最大宽度（缇为单位，用于自适应缩放） */
+    maxWidth?: number;
+    /** 最大高度（缇为单位，用于自适应缩放） */
+    maxHeight?: number;
+    /** 是否保持宽高比 */
+    maintainAspectRatio?: boolean;
+    /** 对齐方式 */
     alignment?: 'left' | 'center' | 'right';
+    /** 间距设置 */
     spacing?: {
         before?: number;
         after?: number;
     };
+    /** 边框设置 */
     border?: {
         color?: string;
         width?: number;
+        style?: 'single' | 'double' | 'dash' | 'dotted' | 'none';
     };
+    /** 浮动设置 */
     floating?: {
         zIndex?: number;
         horizontalPosition?: {
@@ -204,6 +237,143 @@ export interface ImageStyle {
             offset?: number;
         };
     };
+    /** 图片质量（0-100） */
+    quality?: number;
+    /** 支持的图片格式 */
+    supportedFormats?: ('jpg' | 'png' | 'gif' | 'bmp' | 'svg' | 'webp')[];
+}
+
+/**
+ * 水印配置接口
+ */
+export interface WatermarkConfig {
+  /** 水印文本 */
+  text: string;
+  /** 水印字体 */
+  font?: string;
+  /** 水印字号 */
+  size?: number;
+  /** 水印颜色 */
+  color?: string;
+  /** 水印透明度（0-1） */
+  opacity?: number;
+  /** 水印旋转角度（度） */
+  rotation?: number;
+  /** 水印位置 */
+  position?: 'diagonal' | 'horizontal' | 'vertical';
+}
+
+/**
+ * 页眉页脚配置接口
+ */
+export interface HeaderFooterConfig {
+  /** 页眉配置 */
+  header?: {
+    /** 页眉内容 */
+    content: string;
+    /** 页眉对齐方式 */
+    alignment?: 'left' | 'center' | 'right' | 'both';
+    /** 页眉文字样式 */
+    textStyle?: TextStyle;
+    /** 页眉边框 */
+    border?: {
+      bottom?: BorderStyle;
+    };
+  };
+  /** 页脚配置 */
+  footer?: {
+    /** 页脚内容 */
+    content: string;
+    /** 页脚对齐方式 */
+    alignment?: 'left' | 'center' | 'right' | 'both';
+    /** 页脚文字样式 */
+    textStyle?: TextStyle;
+    /** 页脚边框 */
+    border?: {
+      top?: BorderStyle;
+    };
+    /** 是否显示页码 */
+    showPageNumber?: boolean;
+    /** 页码格式 */
+    pageNumberFormat?: string;
+  };
+  /** 首页不同 */
+  differentFirstPage?: boolean;
+  /** 奇偶页不同 */
+  differentOddEven?: boolean;
+}
+
+/**
+ * 目录配置接口
+ */
+export interface TableOfContentsConfig {
+  /** 是否启用目录 */
+  enabled?: boolean;
+  /** 目录标题 */
+  title?: string;
+  /** 目录标题样式 */
+  titleStyle?: ParagraphStyle;
+  /** 包含的标题级别 */
+  levels?: number[];
+  /** 目录项样式 */
+  entryStyles?: {
+    [level: number]: ParagraphStyle;
+  };
+  /** 是否显示页码 */
+  showPageNumbers?: boolean;
+  /** 页码对齐方式 */
+  pageNumberAlignment?: 'left' | 'right';
+  /** 引导符 */
+  tabLeader?: 'dot' | 'hyphen' | 'underscore' | 'none';
+}
+
+/**
+ * 主题配置接口
+ */
+export interface ThemeConfig {
+  /** 主题名称 */
+  name: string;
+  /** 主题描述 */
+  description?: string;
+  /** 主题颜色变量 */
+  colors?: {
+    /** 主色调 */
+    primary?: string;
+    /** 次要色 */
+    secondary?: string;
+    /** 强调色 */
+    accent?: string;
+    /** 文字颜色 */
+    text?: string;
+    /** 背景色 */
+    background?: string;
+    /** 边框颜色 */
+    border?: string;
+    /** 自定义颜色 */
+    [key: string]: string | undefined;
+  };
+  /** 主题字体变量 */
+  fonts?: {
+    /** 标题字体 */
+    heading?: string;
+    /** 正文字体 */
+    body?: string;
+    /** 代码字体 */
+    code?: string;
+    /** 自定义字体 */
+    [key: string]: string | undefined;
+  };
+  /** 主题间距变量 */
+  spacing?: {
+    /** 小间距 */
+    small?: number;
+    /** 中等间距 */
+    medium?: number;
+    /** 大间距 */
+    large?: number;
+    /** 自定义间距 */
+    [key: string]: number | undefined;
+  };
 }
 
 /**
@@ -233,6 +403,18 @@ export interface StyleConfig {
       };
     };
   };
+  
+  /** 主题配置 */
+  theme?: ThemeConfig;
+  
+  /** 水印配置 */
+  watermark?: WatermarkConfig;
+  
+  /** 页眉页脚配置 */
+  headerFooter?: HeaderFooterConfig;
+  
+  /** 目录配置 */
+  tableOfContents?: TableOfContentsConfig;
   
   /** 段落样式映射 */
   paragraphStyles?: {
@@ -318,6 +500,28 @@ export interface StyleValidationResult {
   errors?: string[];
   /** 警告信息 */
   warnings?: string[];
+  /** 修复建议 */
+  suggestions?: string[];
+}
+
+/**
+ * 错误详情接口
+ */
+export interface ErrorDetail {
+  /** 错误代码 */
+  code: string;
+  /** 错误消息 */
+  message: string;
+  /** 错误位置 */
+  location?: {
+    file?: string;
+    line?: number;
+    column?: number;
+  };
+  /** 错误级别 */
+  severity: 'error' | 'warning' | 'info';
+  /** 修复建议 */
+  suggestion?: string;
 }
 
 /**

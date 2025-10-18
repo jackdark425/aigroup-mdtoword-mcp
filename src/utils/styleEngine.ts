@@ -5,9 +5,11 @@ import {
   TextStyle,
   StyleValidationResult,
   StyleContext,
-  StyleMergeOptions
+  StyleMergeOptions,
+  ThemeConfig
 } from '../types/style.js';
 import { presetTemplateLoader } from '../template/presetLoader.js';
+import { ConfigValidator, ErrorHandler } from './errorHandler.js';
 
 /**
  * 样式引擎类 - 负责样式验证、合并和应用
@@ -15,9 +17,26 @@ import { presetTemplateLoader } from '../template/presetLoader.js';
 export class StyleEngine {
   private defaultConfig: StyleConfig;
   private styleCache: Map<string, any> = new Map();
+  private themesCache: Map<string, ThemeConfig> = new Map();
+  private cacheHits: number = 0;
+  private cacheMisses: number = 0;
 
   constructor() {
     this.defaultConfig = this.createDefaultStyleConfig();
+  }
+
+  /**
+   * 获取缓存统计信息
+   */
+  getCacheStats(): { hits: number; misses: number; size: number; hitRate: string } {
+    const total = this.cacheHits + this.cacheMisses;
+    const hitRate = total > 0 ? ((this.cacheHits / total) * 100).toFixed(2) + '%' : '0%';
+    return {
+      hits: this.cacheHits,
+      misses: this.cacheMisses,
+      size: this.styleCache.size,
+      hitRate
+    };
   }
 
   /**
@@ -261,32 +280,35 @@ export class StyleEngine {
   }
 
   /**
-   * 验证样式配置
+   * 验证样式配置（增强版）
    */
   validateStyleConfig(config: StyleConfig): StyleValidationResult {
-    const errors: string[] = [];
-    const warnings: string[] = [];
+    const validator = new ConfigValidator();
 
     // 验证文档样式
     if (config.document) {
-      if (config.document.defaultSize && (config.document.defaultSize < 8 || config.document.defaultSize > 144)) {
-        warnings.push('文档默认字号建议在8-144之间');
-      }
-      
-      if (config.document.defaultColor && !/^[0-9A-Fa-f]{6}$/.test(config.document.defaultColor)) {
-        errors.push('文档默认颜色格式无效，应为6位十六进制');
-      }
+      validator.validateSize(config.document.defaultSize, '文档默认字号');
+      validator.validateColor(config.document.defaultColor, '文档默认颜色');
+    }
+
+    // 验证主题配置
+    if (config.theme) {
+      this.validateTheme(config.theme, validator);
+    }
+
+    // 验证水印配置
+    if (config.watermark) {
+      validator.validateColor(config.watermark.color, '水印颜色');
+      validator.validateOpacity(config.watermark.opacity, '水印透明度');
+      validator.validateSize(config.watermark.size, '水印字号', 10, 500);
     }
 
     // 验证标题样式
     if (config.headingStyles) {
       Object.entries(config.headingStyles).forEach(([key, style]) => {
-        if (style && style.size && (style.size < 8 || style.size > 144)) {
-          warnings.push(`标题${key}字号建议在8-144之间`);
-        }
-        
-        if (style && style.color && !/^[0-9A-Fa-f]{6}$/.test(style.color)) {
-          errors.push(`标题${key}颜色格式无效`);
+        if (style) {
+          validator.validateSize(style.size, `标题${key}字号`);
+          validator.validateColor(style.color, `标题${key}颜色`);
         }
       });
     }
@@ -294,21 +316,27 @@ export class StyleEngine {
     // 验证段落样式
     if (config.paragraphStyles) {
       Object.entries(config.paragraphStyles).forEach(([key, style]) => {
-        if (style && style.size && (style.size < 8 || style.size > 144)) {
-          warnings.push(`段落样式${key}字号建议在8-144之间`);
-        }
-        
-        if (style && style.color && !/^[0-9A-Fa-f]{6}$/.test(style.color)) {
-          errors.push(`段落样式${key}颜色格式无效`);
+        if (style) {
+          validator.validateSize(style.size, `段落样式${key}字号`);
+          validator.validateColor(style.color, `段落样式${key}颜色`);
         }
       });
     }
 
-    return {
-      valid: errors.length === 0,
-      errors: errors.length > 0 ? errors : undefined,
-      warnings: warnings.length > 0 ? warnings : undefined
-    };
+    return validator.getResult();
+  }
+
+  /**
+   * 验证主题配置
+   */
+  private validateTheme(theme: ThemeConfig, validator: ConfigValidator): void {
+    if (theme.colors) {
+      Object.entries(theme.colors).forEach(([key, color]) => {
+        if (color) {
+          validator.validateColor(color, `主题颜色-${key}`);
+        }
+      });
+    }
   }
 
   /**
@@ -390,33 +418,140 @@ export class StyleEngine {
   }
 
   /**
-   * 获取合并后的样式配置
+   * 获取合并后的样式配置（优化缓存）
    */
   getEffectiveStyleConfig(userConfig?: StyleConfig): StyleConfig {
     // 如果没有提供用户配置，尝试使用客户分析模板作为默认配置
     if (!userConfig) {
+      const cacheKey = '__default__';
+      if (this.styleCache.has(cacheKey)) {
+        this.cacheHits++;
+        return this.styleCache.get(cacheKey);
+      }
+
       const defaultTemplateConfig = presetTemplateLoader.getDefaultStyleConfig();
+      let config: StyleConfig;
       if (defaultTemplateConfig) {
         console.log('使用客户分析模板作为默认样式配置');
-        return this.cleanInvalidValues(defaultTemplateConfig);
+        config = this.cleanInvalidValues(defaultTemplateConfig);
+      } else {
+        console.log('使用内置默认样式配置');
+        config = this.defaultConfig;
       }
-      // 如果客户分析模板不可用，使用内置默认配置
-      console.log('使用内置默认样式配置');
-      return this.defaultConfig;
+      
+      this.styleCache.set(cacheKey, config);
+      this.cacheMisses++;
+      return config;
     }
 
-    const cacheKey = JSON.stringify(userConfig);
+    // 使用哈希作为缓存键（更高效）
+    const cacheKey = this.generateCacheKey(userConfig);
     if (this.styleCache.has(cacheKey)) {
+      this.cacheHits++;
       return this.styleCache.get(cacheKey);
     }
 
+    this.cacheMisses++;
+
     // 获取基础配置（优先使用客户分析模板，否则使用内置默认配置）
     const baseConfig = presetTemplateLoader.getDefaultStyleConfig() || this.defaultConfig;
-    const merged = this.mergeStyleConfigs(baseConfig, userConfig);
+    
+    // 应用主题（如果有）
+    let configWithTheme = userConfig;
+    if (userConfig.theme) {
+      configWithTheme = this.applyTheme(userConfig, userConfig.theme);
+    }
+    
+    const merged = this.mergeStyleConfigs(baseConfig, configWithTheme);
     const cleaned = this.cleanInvalidValues(merged);
+    
+    // 缓存结果
     this.styleCache.set(cacheKey, cleaned);
     
+    // 限制缓存大小
+    if (this.styleCache.size > 100) {
+      const firstKey = this.styleCache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.styleCache.delete(firstKey);
+      }
+    }
+    
     return cleaned;
+  }
+
+  /**
+   * 生成缓存键
+   */
+  private generateCacheKey(config: StyleConfig): string {
+    // 使用简化的哈希来生成缓存键
+    const str = JSON.stringify(config);
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(36);
+  }
+
+  /**
+   * 应用主题到样式配置
+   */
+  private applyTheme(config: StyleConfig, theme: ThemeConfig): StyleConfig {
+    const themeKey = theme.name;
+    
+    // 检查主题缓存
+    if (this.themesCache.has(themeKey)) {
+      const cachedTheme = this.themesCache.get(themeKey)!;
+      return this.applyThemeColors(config, cachedTheme);
+    }
+
+    // 缓存主题
+    this.themesCache.set(themeKey, theme);
+    
+    return this.applyThemeColors(config, theme);
+  }
+
+  /**
+   * 应用主题颜色
+   */
+  private applyThemeColors(config: StyleConfig, theme: ThemeConfig): StyleConfig {
+    const result = JSON.parse(JSON.stringify(config));
+
+    // 应用主题颜色到文档默认样式
+    if (theme.colors?.text && result.document) {
+      result.document.defaultColor = result.document.defaultColor || theme.colors.text;
+    }
+
+    // 应用主题字体
+    if (theme.fonts) {
+      if (theme.fonts.heading && result.headingStyles) {
+        Object.values(result.headingStyles).forEach((style: any) => {
+          if (style) {
+            style.font = style.font || theme.fonts!.heading;
+          }
+        });
+      }
+
+      if (theme.fonts.body && result.paragraphStyles) {
+        Object.values(result.paragraphStyles).forEach((style: any) => {
+          if (style) {
+            style.font = style.font || theme.fonts!.body;
+          }
+        });
+      }
+
+      if (theme.fonts.code && result.codeBlockStyle) {
+        result.codeBlockStyle.font = result.codeBlockStyle.font || theme.fonts.code;
+      }
+    }
+
+    // 应用主题间距
+    if (theme.spacing) {
+      // 可以根据需要应用主题间距到各种样式
+    }
+
+    return result;
   }
 
   /**
@@ -513,6 +648,17 @@ export class StyleEngine {
    */
   clearCache(): void {
     this.styleCache.clear();
+    this.themesCache.clear();
+    this.cacheHits = 0;
+    this.cacheMisses = 0;
+  }
+
+  /**
+   * 清除特定缓存
+   */
+  clearCacheFor(config: StyleConfig): void {
+    const cacheKey = this.generateCacheKey(config);
+    this.styleCache.delete(cacheKey);
   }
 
   /**
