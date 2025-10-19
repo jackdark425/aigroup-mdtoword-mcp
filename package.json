@@ -1,7 +1,7 @@
 {
   "name": "aigroup-mdtoword-mcp",
-  "version": "3.0.1",
-  "description": "本地 Markdown 到 Word 文档转换工具，支持最新 MCP 协议特性",
+  "version": "3.1.0",
+  "description": "本地 Markdown 到 Word 文档转换工具，支持最新 MCP 协议特性、增强的表格功能和数据导入",
   "keywords": [
     "markdown",
     "docx",
@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.1",
+    "csv-parse": "^5.5.6",
     "docx": "^9.5.0",
     "express": "^4.21.2",
     "markdown-it": "^14.1.0",

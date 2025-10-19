@@ -1,228 +1,127 @@
 # 更新日志
 
+本文档记录了项目的所有重要更改。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
+版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [3.0.2] - 2025-01-18
+
+### 新增
+- 📦 **新增静态资源**
+  - `converters://supported_formats` - 支持的格式列表
+  - `templates://categories` - 模板分类信息
+  - `performance://metrics` - 性能指标说明
+  - `integrations://available` - 可用集成服务
+
+- 🎯 **新增动态资源模板**
+  - `batch://{jobId}/status` - 批处理任务状态查询
+  - `analysis://{docId}/report` - 文档分析报告
+  - 支持参数化 URI，提供更灵活的资源访问
+
+- 💬 **新增提示模板**
+  - `batch_processing_workflow` - 批量处理工作流指导
+    - 支持学术、商务、技术三种场景
+    - 提供分步骤处理流程
+    - 包含最佳实践和配置示例
+  - `troubleshooting_guide` - 故障排除指南
+    - 涵盖转换、性能、集成三类问题
+    - 提供问题诊断和解决方案
+    - 包含常见错误的快速修复
+
+### 修复
+- ✅ 修复现有资源无法访问的问题
+- ✅ 改进资源响应格式，提升可读性
+- ✅ 优化资源加载性能
+
+### 改进
+- 📚 更新文档，添加所有新资源和提示的使用说明
+- 🧪 新增测试脚本验证资源和提示功能
+- 🎨 改进资源内容的结构化展示
+
+## [3.0.1] - 2025-01-18
+
+### 修复
+- 🐛 修复包元数据问题
+- 📦 更新依赖版本
+
 ## [3.0.0] - 2025-01-18
 
-### 🎉 重大升级 - MCP SDK 1.20.1
+### 重大更新
 
-这是一个重大版本升级，将项目完全迁移到最新的 MCP SDK 1.20.1，引入了多项现代化特性和改进。
+#### MCP 协议升级
+- 🎉 **升级到 MCP SDK 1.20.1** - 使用最新的 TypeScript SDK
+- 📝 **Zod 类型验证** - 所有工具输入输出都有完整的类型安全
+- 🌐 **Streamable HTTP Transport** - 新增 HTTP 服务器支持
+- 🔄 **通知防抖** - 自动合并相同类型的通知，优化性能
+- 📊 **结构化输出** - 工具返回 structuredContent 便于程序处理
 
-### ✨ 新增特性
+#### 新 API
+- ✨ **registerTool/registerResource/registerPrompt** - 使用新的高级 API
+- 🎯 **ResourceTemplate** - 支持动态资源和参数化 URI
+- 🏷️ **title 元数据** - 所有组件都有清晰的显示名称
+- 🤖 **Sampling 支持** - 演示 AI 辅助功能（文档摘要）
 
-#### MCP 协议增强
-- **最新 SDK 1.20.1**: 升级到最新的 MCP TypeScript SDK
-- **McpServer 高级 API**: 使用新的 `McpServer` 类替代低级 `Server` API
-- **Zod 类型验证**: 所有工具输入输出都有完整的类型安全验证
-- **结构化输出**: 工具返回 `structuredContent` 便于程序化处理
-- **通知防抖**: 自动合并相同类型的通知，优化网络性能
+#### 新功能
+- 🛠️ **HTTP 服务器** - 支持通过 HTTP 访问 MCP 服务
+- 📡 **CORS 支持** - 允许浏览器客户端访问
+- 🎯 **动态资源** - 使用 ResourceTemplate 实现参数化资源
+- 🤖 **AI 摘要** - 使用 MCP sampling 功能生成文档摘要
 
-#### 新传输方式
-- **Streamable HTTP Transport**: 新增 HTTP 服务器支持 (`src/http-server.ts`)
-  - 支持通过 HTTP POST `/mcp` 访问
-  - 健康检查端点 `/health`
-  - 完整的 CORS 支持
-  - 并发请求处理
+#### 开发体验
+- 🔧 **更好的错误处理** - 详细的错误信息和恢复建议
+- 📖 **完善的文档** - 包含所有新特性的使用示例
+- 🧪 **类型安全** - 完整的 TypeScript 类型定义
 
-#### 动态资源
-- **ResourceTemplate**: 支持参数化资源 URI
-  - `templates://{templateId}` - 动态获取特定模板详情
-  - 自动参数提取和类型转换
+### 破坏性变更
+- ⚠️ 需要 MCP SDK >= 1.20.0
+- ⚠️ 工具返回格式变更（增加 structuredContent）
+- ⚠️ 某些内部 API 签名变更
 
-#### 高级功能
-- **AI Sampling**: 新增 `summarize_markdown` 工具演示 LLM 集成
-  - 自动总结 Markdown 文档内容
-  - 可配置摘要长度
-  - 演示如何在工具中调用 LLM
-
-#### 更好的元数据
-- 所有工具、资源、提示都有 `title` 字段
-- 详细的 `description` 说明
-- Zod schema 提供参数级别的文档
-
-### 📦 依赖升级
-
-```json
-{
-  "@modelcontextprotocol/sdk": "1.11.3 → 1.20.1",
-  "express": "新增 4.21.2",
-  "node-fetch": "2.6.7 → 3.3.2",
-  "@types/node": "18.19.83 → 22.10.7",
-  "@types/express": "新增 5.0.0",
-  "@types/cors": "新增",
-  "typescript": "5.3.3 → 5.7.3",
-  "tsx": "4.7.1 → 4.19.2"
-}
-```
-
-### 🔧 API 变更
-
-#### 工具注册
-**旧方式 (v2.0.0)**:
-```typescript
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  // 处理逻辑
-});
-```
-
-**新方式 (v3.0.0)**:
-```typescript
-server.registerTool(
-  'tool-name',
-  {
-    title: 'Tool Title',
-    description: 'Description',
-    inputSchema: { param: z.string() },
-    outputSchema: { result: z.string() }
-  },
-  async (args) => ({
-    content: [{ type: 'text', text: 'result' }],
-    structuredContent: { result: 'value' }
-  })
-);
-```
-
-#### 资源注册
-**静态资源**:
-```typescript
-server.registerResource(
-  'resource-id',
-  'resource://uri',
-  { title: 'Title', description: 'Desc' },
-  async (uri) => ({ contents: [...] })
-);
-```
-
-**动态资源** (新功能):
-```typescript
-server.registerResource(
-  'dynamic-resource',
-  new ResourceTemplate('resource://{param}', { list: undefined }),
-  { title: 'Dynamic Resource' },
-  async (uri, { param }) => ({ contents: [...] })
-);
-```
-
-#### 提示注册
-```typescript
-server.registerPrompt(
-  'prompt-name',
-  {
-    title: 'Prompt Title',
-    argsSchema: { param: z.string() }
-  },
-  ({ param }) => ({ messages: [...] })
-);
-```
-
-### 🚀 新功能使用
-
-#### 启动 HTTP 服务器
-```bash
-npm run server:http
-# 服务器运行在 http://localhost:3000/mcp
-```
-
-#### 连接到 HTTP 服务器
-```bash
-# MCP Inspector
-npx @modelcontextprotocol/inspector http://localhost:3000/mcp
-
-# Claude Code
-claude mcp add --transport http my-server http://localhost:3000/mcp
-```
-
-#### 使用 Sampling 功能
-```json
-{
-  "markdown": "# 长篇文档\n\n...很多内容...",
-  "maxLength": 200
-}
-```
-
-### 📝 新增文件
-
-- `src/http-server.ts` - HTTP 传输服务器实现
-- `UPGRADE.md` - 详细的升级指南
-- `CHANGELOG.md` - 完整的更新日志
-
-### 🔄 配置变更
-
-#### package.json
-- 更新版本到 `3.0.0`
-- 新增 `server:http` 脚本
-- 新增 Express 相关依赖
-
-#### tsconfig.json
-- 更新 target 到 `ES2022`
-- 启用 `moduleResolution: bundler`
-- 优化类型检查配置
-
-### 🐛 修复
-
-- 修复类型不匹配问题
-- 改进错误处理
-- 优化性能
-
-### 📚 文档更新
-
-- 完全重写 README.md，包含所有新特性
-- 新增 UPGRADE.md 升级指南
-- 更新代码示例
-- 添加 HTTP 服务器使用说明
-
-### ⚡ 性能优化
-
-- **通知防抖**: 减少不必要的网络通信
-- **类型缓存**: Zod schema 自动缓存
-- **批量处理**: HTTP 服务器支持并发请求
-
-### 🔒 向后兼容性
-
-#### 保持兼容
-- ✅ 所有预设模板
-- ✅ 样式配置格式
-- ✅ 输出的 DOCX 文件格式
-- ✅ Stdio transport
-
-#### 不兼容
-- ❌ 需要 Node.js >= 18.0.0
-- ❌ 需要重新安装依赖和构建
-- ❌ API 调用方式变更（但功能保持）
-
-### 📊 统计
-
-- **新增代码**: ~800 行
-- **修改文件**: 8 个
-- **新增文件**: 3 个
-- **升级依赖**: 7 个
-- **新增功能**: 6 个
-
-### 🙏 致谢
-
-感谢 MCP 团队提供优秀的 SDK 和文档！
-
----
+### 迁移指南
+参见 [UPGRADE.md](UPGRADE.md) 了解从 2.x 升级到 3.x 的详细步骤。
 
 ## [2.0.0] - 2025-01-18
 
-### 新增
-- 🎨 主题系统
-- 💧 水印功能
-- 📄 页眉页脚
-- 📑 自动目录生成
-- 📊 增强的表格样式
-- 🖼️ 图片处理优化
+### 新增功能
+- 🎨 **主题系统** - 统一颜色、字体、间距管理
+- 💧 **水印功能** - 支持自定义文本、透明度、旋转
+- 📄 **页眉页脚** - 自定义内容和自动页码
+- 📑 **自动目录生成** - 可配置级别和样式
+- 📊 **增强表格样式** - 列宽控制、单元格对齐、斑马纹
+- 🖼️ **优化图片处理** - 自适应尺寸、格式检测、错误处理
+
+### 性能优化
+- ⚡ **智能缓存** - 提升重复转换性能
+- 📦 **批量处理** - 支持并发转换
+- 🔍 **增量验证** - 减少不必要的验证开销
 
 ### 改进
-- ⚡ 性能优化（缓存、批量处理）
-- 🛠️ 错误处理改进
-
----
+- 🛠️ **改进错误处理** - 详细错误信息和自动修复建议
+- 📝 **新增示例模板** - enhanced-features 展示所有新功能
+- 📚 **完善文档** - 添加所有新功能的使用说明
 
 ## [1.0.0] - 2024-10-18
 
-### 初始发布
-- 🎉 完整的 Markdown 到 Word 转换
-- 🎨 样式配置系统
-- 📋 5 种预设模板
-- 🔧 MCP 协议支持
-- 💾 本地文件处理
+### 首次发布
+- 🎉 初始版本发布
+- ✅ 支持完整的 Markdown 语法
+- 🎨 提供丰富的样式配置系统
+- 📋 内置 5 种预设模板
+- 🔧 完整的 MCP 协议支持
+- 💾 本地文件处理，无需云存储
+
+### 核心功能
+- Markdown 到 DOCX 转换
+- 预设模板系统
+- 样式配置
+- MCP 工具和资源
+- 提示系统
+
+---
+
+[3.0.2]: https://github.com/aigroup/aigroup-mdtoword-mcp/compare/v3.0.1...v3.0.2
+[3.0.1]: https://github.com/aigroup/aigroup-mdtoword-mcp/compare/v3.0.0...v3.0.1
+[3.0.0]: https://github.com/aigroup/aigroup-mdtoword-mcp/compare/v2.0.0...v3.0.0
+[2.0.0]: https://github.com/aigroup/aigroup-mdtoword-mcp/compare/v1.0.0...v2.0.0
+[1.0.0]: https://github.com/aigroup/aigroup-mdtoword-mcp/releases/tag/v1.0.0

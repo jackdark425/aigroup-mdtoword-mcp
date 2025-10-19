@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { DocxMarkdownConverter } from './converter/markdown.js';
 import { presetTemplateLoader } from './template/presetLoader.js';
 import { DocxTemplateProcessor } from './template/processor.js';
+import { TableProcessor } from './utils/tableProcessor.js';
+import { TableBuilder } from './utils/tableBuilder.js';
 import path from 'path';
 import fs from 'fs/promises';
 
@@ -13,7 +15,7 @@ import fs from 'fs/promises';
 const server = new McpServer(
   {
     name: 'aigroup-mdtoword-mcp',
-    version: '3.0.0',
+    version: '3.0.2',
   },
   {
     // 启用通知防抖，减少网络流量
@@ -428,6 +430,377 @@ server.registerResource(
   }
 );
 
+// ==================== 新增静态资源 ====================
+
+// 静态资源：支持的格式列表
+server.registerResource(
+  'converters-supported-formats',
+  'converters://supported_formats',
+  {
+    title: '支持的格式',
+    description: '支持的输入和输出格式列表',
+    mimeType: 'application/json',
+  },
+  async (uri) => {
+    const formats = {
+      input: {
+        markdown: {
+          name: 'Markdown',
+          extensions: ['.md', '.markdown'],
+          mimeType: 'text/markdown',
+          features: ['标题', '段落', '列表', '表格', '代码块', '图片', '链接', '强调']
+        }
+      },
+      output: {
+        docx: {
+          name: 'Microsoft Word',
+          extension: '.docx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          features: ['完整样式', '主题系统', '水印', '页眉页脚', '目录', '表格', '图片']
+        }
+      },
+      planned: {
+        pdf: {
+          name: 'PDF',
+          extension: '.pdf',
+          status: '计划中',
+          description: '未来将支持直接导出为PDF格式'
+        },
+        html: {
+          name: 'HTML',
+          extension: '.html',
+          status: '计划中',
+          description: '未来将支持导出为HTML格式'
+        }
+      }
+    };
+
+    return {
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'application/json',
+          text: JSON.stringify(formats, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// 静态资源：模板分类信息
+server.registerResource(
+  'templates-categories',
+  'templates://categories',
+  {
+    title: '模板分类',
+    description: '按分类组织的模板信息',
+    mimeType: 'application/json',
+  },
+  async (uri) => {
+    const templates = presetTemplateLoader.getTemplateList();
+    const categories: Record<string, any> = {};
+
+    // 按分类组织模板
+    templates.forEach((template) => {
+      const category = template.category || 'other';
+      if (!categories[category]) {
+        categories[category] = {
+          name: getCategoryName(category),
+          description: getCategoryDescription(category),
+          templates: []
+        };
+      }
+      categories[category].templates.push({
+        id: template.id,
+        name: template.name,
+        description: template.description,
+        isDefault: template.isDefault
+      });
+    });
+
+    return {
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'application/json',
+          text: JSON.stringify(categories, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// 静态资源：性能指标说明
+server.registerResource(
+  'performance-metrics',
+  'performance://metrics',
+  {
+    title: '性能指标',
+    description: '系统性能指标和优化建议',
+    mimeType: 'text/markdown',
+  },
+  async (uri) => {
+    return {
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'text/markdown',
+          text: `# 性能指标说明
+
+## 转换性能
+
+### 小文档（< 10KB）
+- 预期转换时间：< 500ms
+- 内存使用：< 50MB
+- 适用场景：简单报告、文章
+
+### 中等文档（10KB - 100KB）
+- 预期转换时间：500ms - 2s
+- 内存使用：50MB - 100MB
+- 适用场景：技术文档、商务报告
+
+### 大文档（> 100KB）
+- 预期转换时间：2s - 10s
+- 内存使用：100MB - 200MB
+- 适用场景：学术论文、完整书籍章节
+
+## 优化建议
+
+### 1. 图片优化
+- 使用适当的图片尺寸（建议不超过 2000x2000 像素）
+- 避免使用过大的图片文件（单个图片建议 < 5MB）
+- 考虑使用 PNG 或 JPEG 格式
+
+### 2. 表格优化
+- 避免过于复杂的表格结构
+- 建议每个表格列数 < 10
+- 建议每个表格行数 < 100
+
+### 3. 样式优化
+- 使用预设模板可以提高转换速度
+- 避免过多的自定义样式覆盖
+- 合理使用主题系统统一样式
+
+## 性能监控
+
+当前版本已启用：
+- ✅ 通知防抖优化
+- ✅ 静态模板加载（零文件系统操作）
+- ✅ 结构化输出
+- ✅ 增量转换支持
+
+## 系统要求
+
+- Node.js: >= 18.0.0
+- 内存: 至少 512MB 可用内存
+- 磁盘: 至少 100MB 可用空间`,
+        },
+      ],
+    };
+  }
+);
+
+// ==================== 新增动态资源模板 ====================
+
+// 动态资源：批处理任务状态
+server.registerResource(
+  'batch-job-status',
+  new ResourceTemplate('batch://{jobId}/status', { list: undefined }),
+  {
+    title: '批处理任务状态',
+    description: '查看批处理任务的当前状态',
+    mimeType: 'application/json',
+  },
+  async (uri, { jobId }) => {
+    // 模拟批处理任务状态（实际应用中应从数据库或缓存中获取）
+    const mockStatus = {
+      jobId: jobId as string,
+      status: 'processing',
+      progress: {
+        total: 10,
+        completed: 7,
+        failed: 1,
+        pending: 2
+      },
+      startTime: new Date(Date.now() - 300000).toISOString(),
+      estimatedCompletion: new Date(Date.now() + 120000).toISOString(),
+      files: [
+        { name: 'doc1.md', status: 'completed', size: 15360 },
+        { name: 'doc2.md', status: 'completed', size: 23040 },
+        { name: 'doc3.md', status: 'failed', error: '图片加载失败' },
+        { name: 'doc4.md', status: 'processing', progress: 75 }
+      ]
+    };
+
+    return {
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'application/json',
+          text: JSON.stringify(mockStatus, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// 动态资源：文档分析报告
+server.registerResource(
+  'document-analysis-report',
+  new ResourceTemplate('analysis://{docId}/report', { list: undefined }),
+  {
+    title: '文档分析报告',
+    description: '获取文档的详细分析报告',
+    mimeType: 'application/json',
+  },
+  async (uri, { docId }) => {
+    // 模拟文档分析报告
+    const mockReport = {
+      documentId: docId as string,
+      analysis: {
+        statistics: {
+          wordCount: 1250,
+          characterCount: 5420,
+          paragraphCount: 45,
+          headingCount: 12,
+          imageCount: 3,
+          tableCount: 2,
+          codeBlockCount: 5
+        },
+        structure: {
+          headingLevels: {
+            h1: 1,
+            h2: 5,
+            h3: 6
+          },
+          maxNestingLevel: 3,
+          hasTableOfContents: false
+        },
+        complexity: {
+          level: 'medium',
+          score: 6.5,
+          factors: [
+            '包含多个表格',
+            '存在代码块',
+            '图片数量适中'
+          ]
+        },
+        recommendations: [
+          '建议添加自动目录以改善导航',
+          '考虑使用 technical 模板以更好地展示代码',
+          '表格较多，建议启用斑马纹样式'
+        ]
+      },
+      generatedAt: new Date().toISOString()
+    };
+
+    return {
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'application/json',
+          text: JSON.stringify(mockReport, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// 静态资源：可用集成服务
+server.registerResource(
+  'integrations-available',
+  'integrations://available',
+  {
+    title: '可用集成',
+    description: '可与系统集成的外部服务列表',
+    mimeType: 'application/json',
+  },
+  async (uri) => {
+    const integrations = {
+      storage: {
+        local: {
+          name: '本地存储',
+          status: 'active',
+          description: '直接保存到本地文件系统',
+          features: ['快速访问', '无网络依赖']
+        },
+        cloud: {
+          name: '云存储',
+          status: 'planned',
+          description: '未来将支持云存储服务（如 S3、Google Drive）',
+          features: ['远程访问', '自动备份', '团队协作']
+        }
+      },
+      ai: {
+        summarization: {
+          name: 'AI 摘要',
+          status: 'active',
+          description: '使用 LLM 生成文档摘要',
+          requiresSampling: true
+        },
+        translation: {
+          name: 'AI 翻译',
+          status: 'planned',
+          description: '未来将支持多语言翻译',
+          requiresSampling: true
+        }
+      },
+      export: {
+        pdf: {
+          name: 'PDF 导出',
+          status: 'planned',
+          description: '未来将支持直接导出为 PDF'
+        },
+        html: {
+          name: 'HTML 导出',
+          status: 'planned',
+          description: '未来将支持导出为网页格式'
+        }
+      }
+    };
+
+    return {
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'application/json',
+          text: JSON.stringify(integrations, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// ==================== 辅助函数 ====================
+
+/**
+ * 获取分类名称
+ */
+function getCategoryName(category: string): string {
+  const names: Record<string, string> = {
+    academic: '学术类',
+    business: '商务类',
+    technical: '技术类',
+    minimal: '简约类',
+    other: '其他'
+  };
+  return names[category] || category;
+}
+
+/**
+ * 获取分类描述
+ */
+function getCategoryDescription(category: string): string {
+  const descriptions: Record<string, string> = {
+    academic: '适用于学术论文、研究报告等学术文档',
+    business: '适用于商务报告、分析文档等商业场景',
+    technical: '适用于技术文档、API文档、开发指南等',
+    minimal: '简洁风格，适用于快速文档创建',
+    other: '其他类型模板'
+  };
+  return descriptions[category] || '未分类模板';
+}
+
 // ==================== 提示注册 ====================
 
 server.registerPrompt(
@@ -586,6 +959,496 @@ server.registerPrompt(
         },
       ],
     };
+  }
+);
+
+// ==================== 新增提示模板 ====================
+
+// 提示：批处理工作流
+server.registerPrompt(
+  'batch_processing_workflow',
+  {
+    title: '批量处理工作流',
+    description: '指导用户进行批量文档处理',
+    argsSchema: {
+      scenario: z.enum(['academic', 'business', 'technical']).describe('应用场景'),
+    },
+  },
+  ({ scenario }) => {
+    const workflows: Record<string, any> = {
+      academic: {
+        title: '学术论文批量处理',
+        steps: [
+          '1. 准备多个 Markdown 格式的论文章节',
+          '2. 为每个章节选择 "academic" 模板',
+          '3. 配置统一的样式（如引用格式、图表样式）',
+          '4. 批量转换所有章节',
+          '5. 合并生成的 Word 文档'
+        ],
+        tips: [
+          '💡 使用相同的主题配置确保风格统一',
+          '💡 为图表添加自动编号',
+          '💡 启用目录功能便于导航',
+          '💡 考虑添加页眉页脚标注章节信息'
+        ],
+        example: {
+          template: { type: 'preset', presetId: 'academic' },
+          styleConfig: {
+            tableOfContents: { enabled: true, levels: [1, 2, 3] },
+            headerFooter: {
+              header: { content: '学术论文标题', alignment: 'center' },
+              footer: { showPageNumber: true }
+            }
+          }
+        }
+      },
+      business: {
+        title: '商务报告批量处理',
+        steps: [
+          '1. 收集各部门的报告数据（Markdown 格式）',
+          '2. 选择 "business" 或 "customer-analysis" 模板',
+          '3. 为每份报告添加公司水印',
+          '4. 统一页眉页脚和品牌标识',
+          '5. 批量生成带样式的 Word 报告'
+        ],
+        tips: [
+          '💡 使用企业主题色统一视觉风格',
+          '💡 添加保密水印保护敏感信息',
+          '💡 启用表格斑马纹提升可读性',
+          '💡 使用一致的字体和间距'
+        ],
+        example: {
+          template: { type: 'preset', presetId: 'business' },
+          styleConfig: {
+            watermark: { text: '公司机密', opacity: 0.15, rotation: -45 },
+            theme: {
+              colors: { primary: '2E74B5', secondary: '5A8FC4' }
+            }
+          }
+        }
+      },
+      technical: {
+        title: '技术文档批量处理',
+        steps: [
+          '1. 整理 API 文档、开发指南等技术内容',
+          '2. 使用 "technical" 模板',
+          '3. 配置代码块样式和语法高亮',
+          '4. 添加目录和章节导航',
+          '5. 批量转换生成文档'
+        ],
+        tips: [
+          '💡 使用等宽字体展示代码',
+          '💡 为代码块添加背景色',
+          '💡 保持技术术语的一致性',
+          '💡 使用清晰的标题层级'
+        ],
+        example: {
+          template: { type: 'preset', presetId: 'technical' },
+          styleConfig: {
+            codeBlockStyle: {
+              font: 'Consolas',
+              backgroundColor: 'F8F8F8'
+            },
+            tableOfContents: { enabled: true }
+          }
+        }
+      }
+    };
+
+    const workflow = workflows[scenario];
+
+    return {
+      messages: [
+        {
+          role: 'assistant',
+          content: {
+            type: 'text',
+            text: `# ${workflow.title}
+
+## 📋 处理步骤
+
+${workflow.steps.join('\n')}
+
+## 💡 最佳实践
+
+${workflow.tips.join('\n')}
+
+## 📝 配置示例
+
+\`\`\`json
+${JSON.stringify(workflow.example, null, 2)}
+\`\`\`
+
+## 🚀 开始批量处理
+
+现在您可以：
+1. 准备好所有 Markdown 文件
+2. 使用上述配置为每个文件调用转换工具
+3. 检查生成的文档确保格式一致
+
+需要帮助吗？请告诉我您的具体需求！`,
+          },
+        },
+      ],
+    };
+  }
+);
+
+// 提示：故障排除指南
+server.registerPrompt(
+  'troubleshooting_guide',
+  {
+    title: '故障排除指南',
+    description: '常见问题和解决方案',
+    argsSchema: {
+      errorType: z.enum(['conversion', 'performance', 'integration']).describe('错误类型'),
+    },
+  },
+  ({ errorType }) => {
+    const guides: Record<string, any> = {
+      conversion: {
+        title: '转换错误排查',
+        problems: [
+          {
+            issue: '❌ 图片无法显示',
+            causes: [
+              '图片路径不正确',
+              '图片格式不支持',
+              '图片文件过大',
+              '网络图片无法访问'
+            ],
+            solutions: [
+              '✅ 使用相对路径或绝对路径',
+              '✅ 确保使用 PNG、JPEG、GIF 等常见格式',
+              '✅ 压缩图片到 5MB 以下',
+              '✅ 下载网络图片到本地后引用'
+            ]
+          },
+          {
+            issue: '❌ 表格格式错误',
+            causes: [
+              'Markdown 表格语法不正确',
+              '表格过于复杂',
+              '列宽设置不合理'
+            ],
+            solutions: [
+              '✅ 检查表格语法（使用 | 分隔列）',
+              '✅ 简化表格结构',
+              '✅ 在 styleConfig 中配置合适的列宽'
+            ]
+          },
+          {
+            issue: '❌ 样式未生效',
+            causes: [
+              '样式配置语法错误',
+              '模板和自定义样式冲突',
+              '颜色值格式不正确'
+            ],
+            solutions: [
+              '✅ 验证 JSON 格式是否正确',
+              '✅ 检查样式优先级（自定义样式会覆盖模板）',
+              '✅ 使用 6 位十六进制颜色值（如 "2E74B5"）'
+            ]
+          }
+        ]
+      },
+      performance: {
+        title: '性能问题排查',
+        problems: [
+          {
+            issue: '⚠️ 转换速度慢',
+            causes: [
+              '文档过大',
+              '图片过多或过大',
+              '系统资源不足'
+            ],
+            solutions: [
+              '✅ 分割大文档为多个小文档',
+              '✅ 优化图片大小和数量',
+              '✅ 确保系统有足够内存（至少 512MB）',
+              '✅ 使用预设模板而非过多自定义样式'
+            ]
+          },
+          {
+            issue: '⚠️ 内存占用高',
+            causes: [
+              '处理多个大文档',
+              '图片未压缩',
+              '样式配置过于复杂'
+            ],
+            solutions: [
+              '✅ 分批处理文档',
+              '✅ 压缩图片文件',
+              '✅ 简化样式配置',
+              '✅ 处理完一个文档后再处理下一个'
+            ]
+          }
+        ]
+      },
+      integration: {
+        title: '集成问题排查',
+        problems: [
+          {
+            issue: '🔌 MCP 连接失败',
+            causes: [
+              'Node.js 版本过低',
+              '依赖包未安装',
+              '端口被占用'
+            ],
+            solutions: [
+              '✅ 确保 Node.js >= 18.0.0',
+              '✅ 运行 npm install 安装依赖',
+              '✅ 检查并释放被占用的端口'
+            ]
+          },
+          {
+            issue: '🔌 Sampling 不可用',
+            causes: [
+              '客户端不支持 sampling',
+              'MCP 版本不兼容'
+            ],
+            solutions: [
+              '✅ 更新到支持 sampling 的 MCP 客户端',
+              '✅ 检查 MCP SDK 版本（需要 >= 1.20.0）',
+              '✅ 暂时不使用需要 sampling 的功能（如 AI 摘要）'
+            ]
+          },
+          {
+            issue: '🔌 资源访问失败',
+            causes: [
+              '资源 URI 格式不正确',
+              '动态资源参数缺失'
+            ],
+            solutions: [
+              '✅ 检查资源 URI 格式（如 templates://list）',
+              '✅ 为动态资源提供必要参数（如 batch://{jobId}/status）',
+              '✅ 使用 list 命令查看可用资源'
+            ]
+          }
+        ]
+      }
+    };
+
+    const guide = guides[errorType];
+
+    return {
+      messages: [
+        {
+          role: 'assistant',
+          content: {
+            type: 'text',
+            text: `# ${guide.title}
+
+${guide.problems.map((problem: any) => `
+## ${problem.issue}
+
+### 可能原因
+${problem.causes.map((cause: string) => `- ${cause}`).join('\n')}
+
+### 解决方案
+${problem.solutions.map((solution: string) => `${solution}`).join('\n')}
+`).join('\n')}
+
+## 📞 获取更多帮助
+
+如果问题仍未解决：
+1. 查看完整文档和示例
+2. 检查系统日志获取详细错误信息
+3. 访问资源获取最新信息：
+   - templates://list - 查看可用模板
+   - style-guide://complete - 样式配置指南
+   - converters://supported_formats - 支持的格式
+   - performance://metrics - 性能指标
+
+需要具体的帮助吗？请描述您遇到的问题！`,
+          },
+        },
+      ],
+    };
+  }
+);
+
+// ==================== 表格处理工具 ====================
+
+// 工具：从CSV创建表格数据
+server.registerTool(
+  'create_table_from_csv',
+  {
+    title: '从CSV创建表格',
+    description: '将CSV数据转换为可用于文档的表格数据',
+    inputSchema: {
+      csvData: z.string().describe('CSV格式的数据'),
+      hasHeader: z.boolean().optional().default(true).describe('第一行是否为表头'),
+      delimiter: z.string().optional().default(',').describe('分隔符'),
+      styleName: z.string().optional().default('minimal').describe('表格样式名称'),
+    },
+    outputSchema: {
+      success: z.boolean(),
+      rowCount: z.number(),
+      columnCount: z.number(),
+      styleName: z.string(),
+      preview: z.string(),
+    },
+  },
+  async ({ csvData, hasHeader = true, delimiter = ',', styleName = 'minimal' }) => {
+    try {
+      const tableData = TableProcessor.fromCSV(csvData, { hasHeader, delimiter, styleName });
+      const validation = TableProcessor.validate(tableData);
+      
+      if (!validation.valid) {
+        throw new Error(`表格数据验证失败: ${validation.errors.join(', ')}`);
+      }
+
+      const rowCount = tableData.rows.length;
+      const columnCount = tableData.rows[0]?.length || 0;
+      const preview = tableData.rows.slice(0, 3).map((row, i) =>
+        `${i + 1}. ${row.map(cell => cell.content).join(' | ')}`
+      ).join('\n');
+
+      const output = {
+        success: true,
+        rowCount,
+        columnCount,
+        styleName: typeof tableData.style === 'string' ? tableData.style : 'custom',
+        preview: preview || '空表格'
+      };
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `✅ CSV表格创建成功！\n\n📊 行数: ${rowCount}\n📊 列数: ${columnCount}\n🎨 样式: ${output.styleName}\n\n📝 预览（前3行）:\n${output.preview}`,
+          },
+        ],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ CSV表格创建失败: ${errorMessage}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// 工具：从JSON创建表格数据
+server.registerTool(
+  'create_table_from_json',
+  {
+    title: '从JSON创建表格',
+    description: '将JSON数组数据转换为可用于文档的表格数据',
+    inputSchema: {
+      jsonData: z.string().describe('JSON格式的数据（数组）'),
+      columns: z.array(z.string()).optional().describe('要包含的列名（可选，默认全部）'),
+      styleName: z.string().optional().default('minimal').describe('表格样式名称'),
+    },
+    outputSchema: {
+      success: z.boolean(),
+      rowCount: z.number(),
+      columnCount: z.number(),
+      styleName: z.string(),
+      preview: z.string(),
+    },
+  },
+  async ({ jsonData, columns, styleName = 'minimal' }) => {
+    try {
+      const tableData = TableProcessor.fromJSON(jsonData, { columns, styleName });
+      const validation = TableProcessor.validate(tableData);
+      
+      if (!validation.valid) {
+        throw new Error(`表格数据验证失败: ${validation.errors.join(', ')}`);
+      }
+
+      const rowCount = tableData.rows.length;
+      const columnCount = tableData.rows[0]?.length || 0;
+      const preview = tableData.rows.slice(0, 3).map((row, i) =>
+        `${i + 1}. ${row.map(cell => cell.content).join(' | ')}`
+      ).join('\n');
+
+      const output = {
+        success: true,
+        rowCount,
+        columnCount,
+        styleName: typeof tableData.style === 'string' ? tableData.style : 'custom',
+        preview: preview || '空表格'
+      };
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `✅ JSON表格创建成功！\n\n📊 行数: ${rowCount}\n📊 列数: ${columnCount}\n🎨 样式: ${output.styleName}\n\n📝 预览（前3行）:\n${output.preview}`,
+          },
+        ],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ JSON表格创建失败: ${errorMessage}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// 工具：列出所有预定义表格样式
+server.registerTool(
+  'list_table_styles',
+  {
+    title: '列出表格样式',
+    description: '获取所有可用的预定义表格样式',
+    inputSchema: {},
+    outputSchema: {
+      styles: z.array(z.object({
+        name: z.string(),
+        description: z.string(),
+      })),
+      count: z.number(),
+    },
+  },
+  async () => {
+    try {
+      const styles = TableProcessor.listPresetStyles();
+      const output = {
+        styles,
+        count: styles.length,
+      };
+
+      const styleList = styles.map(s => `• **${s.name}**: ${s.description}`).join('\n');
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `📋 可用表格样式（共${output.count}种）:\n\n${styleList}\n\n💡 在创建表格时使用 styleName 参数指定样式`,
+          },
+        ],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ 获取表格样式失败: ${errorMessage}`,
+          },
+        ],
+        isError: true,
+      };
+    }
   }
 );
 

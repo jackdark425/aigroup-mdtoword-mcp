@@ -1,520 +1,372 @@
-# 项目功能优化总结
+# 增强功能说明 (v3.0.2)
 
-本文档详细说明了项目的所有功能增强和优化改进。
+本文档详细说明了 v3.0.2 版本中新增的资源系统和提示系统增强功能。
 
-## 📋 目录
+## 🎯 新增功能概览
 
-1. [新增功能](#新增功能)
-2. [性能优化](#性能优化)
-3. [代码质量改进](#代码质量改进)
-4. [用户体验改进](#用户体验改进)
-5. [技术细节](#技术细节)
+### 📦 新增 6 个资源
+- **3 个静态资源** - 提供系统级信息
+- **3 个动态资源** - 支持参数化查询
 
----
+### 💬 新增 2 个提示模板
+- **batch_processing_workflow** - 批量处理工作流指导
+- **troubleshooting_guide** - 故障排除指南
 
-## 🎯 新增功能
+## 📚 新增资源详解
 
-### 1. 主题系统（Theme System）
+### 1. converters://supported_formats
+**支持的格式列表**
 
-**位置**: `src/types/style.ts`, `src/utils/styleEngine.ts`
+提供完整的输入输出格式支持信息，包括：
+- 输入格式（Markdown）的详细信息
+- 输出格式（DOCX）的功能特性
+- 计划中的格式（PDF、HTML）
 
-**功能描述**:
-- 统一管理文档颜色、字体和间距
-- 支持主题继承和变量
-- 自动应用主题到各种样式元素
+**使用场景：**
+- 了解系统支持的文件格式
+- 查看各格式的特性和限制
+- 了解未来的格式扩展计划
 
-**实现细节**:
-```typescript
-interface ThemeConfig {
-  name: string;
-  colors?: {
-    primary?: string;
-    secondary?: string;
-    // ... 自定义颜色
-  };
-  fonts?: {
-    heading?: string;
-    body?: string;
-    code?: string;
-  };
-  spacing?: {
-    small?: number;
-    medium?: number;
-    large?: number;
-  };
-}
-```
+**返回格式：** JSON
 
-**使用示例**:
+### 2. templates://categories
+**模板分类信息**
+
+按分类组织所有可用模板，提供：
+- 分类名称和描述
+- 每个分类下的模板列表
+- 模板的详细信息和默认标记
+
+**使用场景：**
+- 按类型浏览模板
+- 了解不同类别模板的用途
+- 快速找到适合的模板
+
+**返回格式：** JSON
+
+**示例响应：**
 ```json
 {
-  "theme": {
-    "name": "专业蓝色主题",
-    "colors": { "primary": "2E5C8A" },
-    "fonts": { "heading": "微软雅黑" }
+  "business": {
+    "name": "商务类",
+    "description": "适用于商务报告、分析文档等商业场景",
+    "templates": [
+      {
+        "id": "business",
+        "name": "商务报告模板",
+        "description": "...",
+        "isDefault": false
+      }
+    ]
   }
 }
 ```
 
-### 2. 水印功能（Watermark）
+### 3. performance://metrics
+**性能指标说明**
 
-**位置**: `src/types/style.ts`, `src/utils/watermarkProcessor.ts`
+提供系统性能基准和优化建议：
+- 不同文档大小的转换时间预期
+- 内存使用情况
+- 优化建议（图片、表格、样式）
+- 系统要求
 
-**功能描述**:
-- 添加文档水印
-- 支持自定义文本、字体、颜色
-- 可配置透明度和旋转角度
+**使用场景：**
+- 评估转换性能
+- 优化大文档处理
+- 诊断性能问题
 
-**实现细节**:
-- 使用docx库的水印功能
-- 提供配置验证和默认值
-- 支持对角线、水平、垂直等位置
+**返回格式：** Markdown
 
-**配置示例**:
+### 4. batch://{jobId}/status
+**批处理任务状态**（动态资源）
+
+查询批量转换任务的实时状态：
+- 任务进度（总数、完成、失败、待处理）
+- 开始时间和预计完成时间
+- 每个文件的详细状态
+- 错误信息（如有）
+
+**使用场景：**
+- 监控批量转换进度
+- 诊断失败的文件
+- 估算剩余时间
+
+**参数：**
+- `jobId` - 批处理任务 ID
+
+**示例 URI：**
+```
+batch://job-123/status
+batch://conversion-2025/status
+```
+
+**返回格式：** JSON
+
+### 5. analysis://{docId}/report
+**文档分析报告**（动态资源）
+
+获取文档的详细分析信息：
+- 统计数据（字数、段落数、图片数等）
+- 文档结构（标题层级、嵌套深度）
+- 复杂度评估
+- 优化建议
+
+**使用场景：**
+- 了解文档结构
+- 评估转换复杂度
+- 获取优化建议
+
+**参数：**
+- `docId` - 文档 ID
+
+**示例 URI：**
+```
+analysis://doc-456/report
+analysis://my-document/report
+```
+
+**返回格式：** JSON
+
+**示例响应：**
 ```json
 {
-  "watermark": {
-    "text": "机密文档",
-    "opacity": 0.2,
-    "rotation": -45
+  "documentId": "doc-456",
+  "analysis": {
+    "statistics": {
+      "wordCount": 1250,
+      "characterCount": 5420,
+      "paragraphCount": 45,
+      "headingCount": 12,
+      "imageCount": 3,
+      "tableCount": 2,
+      "codeBlockCount": 5
+    },
+    "complexity": {
+      "level": "medium",
+      "score": 6.5
+    },
+    "recommendations": [
+      "建议添加自动目录以改善导航",
+      "考虑使用 technical 模板以更好地展示代码"
+    ]
   }
 }
 ```
 
-### 3. 页眉页脚（Header/Footer）
+### 6. integrations://available
+**可用集成服务**
 
-**位置**: `src/types/style.ts`, `src/converter/markdown.ts`
+列出所有可用和计划中的集成服务：
+- 存储集成（本地、云存储）
+- AI 集成（摘要、翻译）
+- 导出集成（PDF、HTML）
 
-**功能描述**:
-- 自定义页眉和页脚内容
-- 自动页码支持
-- 可配置文字样式和边框
-- 支持首页/奇偶页差异
+**使用场景：**
+- 了解可用集成
+- 规划功能使用
+- 检查服务状态
 
-**实现细节**:
-- 集成到文档节配置中
-- 使用docx的Header和Footer类
-- 支持PageNumber组件
+**返回格式：** JSON
 
-**配置示例**:
+## 💬 新增提示模板详解
+
+### 1. batch_processing_workflow
+**批量处理工作流指导**
+
+为不同场景提供批量文档处理的最佳实践。
+
+**参数：**
+- `scenario`: 'academic' | 'business' | 'technical'
+
+**提供内容：**
+
+#### Academic（学术场景）
+- 论文章节批量处理流程
+- 学术格式统一配置
+- 引用和图表编号建议
+- 目录和页眉页脚设置
+
+#### Business（商务场景）
+- 部门报告批量转换
+- 企业品牌标识统一
+- 水印和保密设置
+- 表格和数据可视化优化
+
+#### Technical（技术场景）
+- API 文档批量生成
+- 代码块样式配置
+- 技术术语一致性
+- 清晰的标题层级
+
+**使用示例：**
 ```json
 {
-  "headerFooter": {
-    "header": { "content": "企业文档" },
-    "footer": {
-      "content": "第 ",
-      "showPageNumber": true,
-      "pageNumberFormat": "页"
-    }
+  "name": "batch_processing_workflow",
+  "arguments": {
+    "scenario": "business"
   }
 }
 ```
 
-### 4. 自动目录生成（Table of Contents）
+### 2. troubleshooting_guide
+**故障排除指南**
 
-**位置**: `src/types/style.ts`, `src/utils/tocGenerator.ts`
+提供常见问题的诊断和解决方案。
 
-**功能描述**:
-- 自动从文档标题生成目录
-- 可配置包含的标题级别
-- 自定义目录样式
-- 支持页码和引导符
+**参数：**
+- `errorType`: 'conversion' | 'performance' | 'integration'
 
-**实现细节**:
-- 使用docx的TableOfContents类
-- 提取Markdown中的标题结构
-- 在文档内容前插入目录
+**覆盖问题：**
 
-**配置示例**:
+#### Conversion（转换错误）
+- ❌ 图片无法显示
+  - 原因分析：路径、格式、大小、网络
+  - 解决方案：路径检查、格式转换、压缩、本地化
+- ❌ 表格格式错误
+  - 原因分析：语法、复杂度、列宽
+  - 解决方案：语法修正、简化、配置
+- ❌ 样式未生效
+  - 原因分析：语法、冲突、格式
+  - 解决方案：验证、优先级、标准化
+
+#### Performance（性能问题）
+- ⚠️ 转换速度慢
+  - 原因分析：文档大小、图片、资源
+  - 解决方案：分割、优化、资源管理
+- ⚠️ 内存占用高
+  - 原因分析：批量、压缩、复杂度
+  - 解决方案：分批、压缩、简化
+
+#### Integration（集成问题）
+- 🔌 MCP 连接失败
+  - 原因分析：版本、依赖、端口
+  - 解决方案：升级、安装、释放
+- 🔌 Sampling 不可用
+  - 原因分析：客户端支持、版本
+  - 解决方案：更新、检查、替代方案
+- 🔌 资源访问失败
+  - 原因分析：URI 格式、参数
+  - 解决方案：格式检查、参数补充、列表查看
+
+**使用示例：**
 ```json
 {
-  "tableOfContents": {
-    "enabled": true,
-    "title": "目 录",
-    "levels": [1, 2, 3]
+  "name": "troubleshooting_guide",
+  "arguments": {
+    "errorType": "conversion"
   }
 }
 ```
 
-### 5. 增强的图片处理（Enhanced Image Processing）
+## 🚀 使用建议
 
-**位置**: `src/utils/imageProcessor.ts`, `src/converter/markdown.ts`
+### 资源访问最佳实践
 
-**新增特性**:
-- ✅ 自适应尺寸调整（maxWidth, maxHeight）
-- ✅ 保持宽高比选项
-- ✅ 智能格式检测
-- ✅ 加载失败占位符
-- ✅ 支持更多格式（webp等）
-- ✅ 错误详情和建议
+1. **静态资源** - 获取系统级信息
+```javascript
+// 查看支持的格式
+await client.readResource('converters://supported_formats');
 
-**实现细节**:
-```typescript
-class ImageProcessor {
-  static async loadImageData(src: string)
-  static calculateDimensions(...)
-  static isSupportedFormat(...)
-  static createPlaceholderSvg(...)
-}
+// 按分类浏览模板
+await client.readResource('templates://categories');
+
+// 了解性能指标
+await client.readResource('performance://metrics');
 ```
 
-**改进点**:
-- 统一的图片加载逻辑
-- 更好的错误处理
-- 性能优化（避免重复加载）
+2. **动态资源** - 查询特定信息
+```javascript
+// 查看批处理状态
+await client.readResource('batch://job-123/status');
 
-### 6. 增强的表格样式（Enhanced Table Styles）
-
-**位置**: `src/types/style.ts`, `src/converter/markdown.ts`
-
-**新增功能**:
-- ✅ 列宽控制（columnWidths）
-- ✅ 单元格对齐（水平和垂直）
-- ✅ 斑马纹样式（奇偶行不同颜色）
-- ✅ 独立的表头样式配置
-
-**实现细节**:
-```typescript
-interface TableStyle {
-  columnWidths?: number[];
-  cellAlignment?: {
-    horizontal?: 'left' | 'center' | 'right';
-    vertical?: 'top' | 'center' | 'bottom';
-  };
-  stripedRows?: {
-    enabled?: boolean;
-    oddRowShading?: string;
-    evenRowShading?: string;
-  };
-}
+// 获取文档分析
+await client.readResource('analysis://my-doc/report');
 ```
 
----
+### 提示使用最佳实践
 
-## ⚡ 性能优化
-
-### 1. 智能缓存系统
-
-**位置**: `src/utils/styleEngine.ts`
-
-**优化内容**:
-- 样式配置自动缓存
-- 使用哈希键提高查找效率
-- 主题配置独立缓存
-- 缓存大小限制（防止内存溢出）
-- 缓存统计信息
-
-**性能提升**:
-- 相同配置重复使用：0ms（缓存命中）
-- 缓存未命中：约5-10ms
-- 典型场景命中率：80%+
-
-**实现细节**:
-```typescript
-class StyleEngine {
-  private styleCache: Map<string, any>;
-  private themesCache: Map<string, ThemeConfig>;
-  private cacheHits: number;
-  private cacheMisses: number;
-  
-  getCacheStats() // 获取统计信息
-  generateCacheKey() // 高效哈希生成
-}
+1. **工作流指导** - 批量处理前获取建议
+```javascript
+// 学术文档批处理指导
+await client.getPrompt('batch_processing_workflow', {
+  scenario: 'academic'
+});
 ```
 
-### 2. 批量处理优化
-
-**位置**: `src/utils/imageProcessor.ts`
-
-**优化内容**:
-- 图片批量加载
-- 避免重复下载
-- 并行处理支持
-
-### 3. 增量验证
-
-**位置**: `src/utils/errorHandler.ts`, `src/utils/styleEngine.ts`
-
-**优化内容**:
-- 只验证变更的配置项
-- 提前失败机制
-- 懒加载验证规则
-
----
-
-## 🛠️ 代码质量改进
-
-### 1. 类型安全增强
-
-**改进内容**:
-- 新增详细的TypeScript接口
-- 减少any类型使用
-- 完整的类型定义导出
-
-**新增类型**:
-- `ThemeConfig` - 主题配置
-- `WatermarkConfig` - 水印配置
-- `HeaderFooterConfig` - 页眉页脚配置
-- `TableOfContentsConfig` - 目录配置
-- `ErrorDetail` - 错误详情
-- 增强的 `ImageStyle` - 图片样式
-- 增强的 `TableStyle` - 表格样式
-
-### 2. 代码复用优化
-
-**位置**: 新增工具类
-
-**新增工具类**:
-1. **ImageProcessor** (`src/utils/imageProcessor.ts`)
-   - 统一图片处理逻辑
-   - 格式检测和验证
-   - 尺寸计算
-   - 占位符生成
-
-2. **WatermarkProcessor** (`src/utils/watermarkProcessor.ts`)
-   - 水印配置处理
-   - 验证和默认值
-   - 配置合并
-
-3. **TOCGenerator** (`src/utils/tocGenerator.ts`)
-   - 目录生成
-   - 标题提取
-   - 目录配置管理
-
-4. **ErrorHandler & ConfigValidator** (`src/utils/errorHandler.ts`)
-   - 统一错误处理
-   - 配置验证
-   - 自动修复建议
-
-### 3. 模块化设计
-
-**改进内容**:
-- 职责清晰分离
-- 单一职责原则
-- 便于测试和维护
-
-**模块结构**:
-```
-src/
-├── types/          # 类型定义
-├── utils/          # 工具类
-│   ├── styleEngine.ts
-│   ├── imageProcessor.ts
-│   ├── watermarkProcessor.ts
-│   ├── tocGenerator.ts
-│   └── errorHandler.ts
-├── converter/      # 转换器
-└── template/       # 模板处理
+2. **故障排除** - 遇到问题时快速诊断
+```javascript
+// 转换问题排查
+await client.getPrompt('troubleshooting_guide', {
+  errorType: 'conversion'
+});
 ```
 
----
+## 📊 功能对比
 
-## 💡 用户体验改进
-
-### 1. 增强的错误处理
-
-**位置**: `src/utils/errorHandler.ts`
-
-**改进内容**:
-- 详细的错误信息
-- 错误位置定位
-- 修复建议
-- 错误级别分类（error/warning/info）
-- 自动修复功能
-
-**示例**:
-```
-[ERROR] INVALID_COLOR: 标题h1颜色格式无效
-  建议: 颜色应为6位十六进制格式，如 "FF0000"
-```
-
-### 2. 配置验证增强
-
-**位置**: `src/utils/errorHandler.ts`, `src/utils/styleEngine.ts`
-
-**改进内容**:
-- 预先验证配置有效性
-- 提供配置建议
-- 自动修复常见错误
-- 验证结果包含建议
-
-**验证项**:
-- 颜色格式验证
-- 字号范围验证
-- 透明度范围验证
-- 主题配置验证
-
-### 3. 详细的日志输出
-
-**改进内容**:
-- 转换过程各阶段耗时统计
-- 缓存命中率统计
-- 错误和警告汇总
-- 图片处理详情
-
-**示例输出**:
-```
-🚀 [转换器] 开始初始化
-⏱️ [转换器] MarkdownIt初始化耗时: 5ms
-⏱️ [转换器] 样式引擎处理耗时: 3ms
-📊 [缓存统计] 命中率: 85.5%, 大小: 12
-🏁 [转换器] 初始化完成，总耗时: 15ms
-```
-
----
-
-## 🔧 技术细节
-
-### 1. 样式引擎优化
-
-**缓存策略**:
-```typescript
-// 使用哈希键代替完整JSON字符串
-private generateCacheKey(config: StyleConfig): string {
-  const str = JSON.stringify(config);
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return hash.toString(36);
-}
-```
-
-**主题应用**:
-```typescript
-private applyTheme(config: StyleConfig, theme: ThemeConfig): StyleConfig {
-  // 应用主题颜色到各种样式
-  // 应用主题字体
-  // 应用主题间距
-}
-```
-
-### 2. 图片处理优化
-
-**尺寸计算算法**:
-```typescript
-static calculateDimensions(
-  originalWidth?: number,
-  originalHeight?: number,
-  imageStyle?: ImageStyle
-): { width: number; height: number } {
-  // 考虑最大尺寸限制
-  // 保持宽高比
-  // 返回计算后的尺寸
-}
-```
-
-**占位符生成**:
-```typescript
-static createPlaceholderSvg(
-  width: number,
-  height: number,
-  errorMessage: string,
-  alt: string,
-  src: string
-): Buffer {
-  // 生成SVG占位符
-  // 显示错误信息
-  // 返回Buffer
-}
-```
-
-### 3. 表格样式应用
-
-**斑马纹实现**:
-```typescript
-const isOddRow = rowIndex % 2 === 1;
-const rowShading = tableStyle?.stripedRows?.enabled 
-  ? (isOddRow 
-      ? tableStyle.stripedRows.oddRowShading 
-      : tableStyle.stripedRows.evenRowShading)
-  : undefined;
-```
-
-**单元格对齐**:
-```typescript
-const cellHorizontalAlign = isHeaderRow(rowIndex) 
-  ? (tableStyle?.headerStyle?.alignment || 'center')
-  : (tableStyle?.cellAlignment?.horizontal || 'left');
-```
-
----
-
-## 📈 性能对比
-
-### 转换性能
-
-| 场景 | 优化前 | 优化后 | 提升 |
+| 功能 | v3.0.1 | v3.0.2 | 说明 |
 |------|--------|--------|------|
-| 首次转换 | 100ms | 95ms | 5% |
-| 相同配置转换 | 100ms | 10ms | 90% |
-| 图片处理 | 200ms | 180ms | 10% |
-| 大文档转换 | 500ms | 450ms | 10% |
+| 静态资源 | 3 | 6 | +3 个系统信息资源 |
+| 动态资源 | 1 | 4 | +3 个参数化资源 |
+| 提示模板 | 3 | 5 | +2 个交互式提示 |
+| 资源分类 | ❌ | ✅ | 支持按分类浏览 |
+| 批处理指导 | ❌ | ✅ | 完整的工作流建议 |
+| 故障排除 | ❌ | ✅ | 系统化的问题诊断 |
 
-### 缓存效果
+## 🎯 实际应用场景
 
-| 指标 | 数值 |
-|------|------|
-| 典型命中率 | 80-90% |
-| 缓存节省时间 | 90ms/次 |
-| 内存占用增加 | <1MB |
+### 场景 1：批量转换学术论文
+```javascript
+// 1. 查看学术模板分类
+const categories = await readResource('templates://categories');
 
----
+// 2. 获取批量处理指导
+const guide = await getPrompt('batch_processing_workflow', {
+  scenario: 'academic'
+});
 
-## 🎓 最佳实践建议
+// 3. 执行批量转换
+// ...
 
-### 1. 使用主题提高一致性
+// 4. 监控批处理进度
+const status = await readResource('batch://academic-batch-1/status');
+```
 
-建议为组织定义统一的主题配置，确保所有文档风格一致。
+### 场景 2：诊断转换问题
+```javascript
+// 1. 文档分析
+const report = await readResource('analysis://my-doc/report');
 
-### 2. 合理配置缓存
+// 2. 获取故障排除指导
+const troubleshoot = await getPrompt('troubleshooting_guide', {
+  errorType: 'conversion'
+});
 
-对于高频转换场景，相同配置会自动缓存，无需额外配置。
+// 3. 根据建议修复问题
+// ...
+```
 
-### 3. 图片优化建议
+### 场景 3：性能优化
+```javascript
+// 1. 查看性能指标
+const metrics = await readResource('performance://metrics');
 
-- 使用适当分辨率的图片
-- 设置maxWidth和maxHeight避免过大
-- 本地图片优先于网络图片
+// 2. 获取性能问题指导
+const perfGuide = await getPrompt('troubleshooting_guide', {
+  errorType: 'performance'
+});
 
-### 4. 性能调优
-
-- 使用预设模板获得最佳性能
-- 避免频繁清除缓存
-- 批量转换时复用配置
-
----
-
-## 🔄 向后兼容性
-
-所有新功能都是**可选的**，不会影响现有代码：
-
-- ✅ 现有API保持不变
-- ✅ 默认行为保持一致
-- ✅ 新功能通过配置启用
-- ✅ 完全向后兼容
-
----
+// 3. 应用优化建议
+// ...
+```
 
 ## 📝 总结
 
-本次优化涵盖了：
+v3.0.2 版本通过增强资源和提示系统，显著提升了用户体验：
 
-✅ **6个新增功能**: 主题、水印、页眉页脚、目录、增强表格、优化图片  
-✅ **3项性能优化**: 智能缓存、批量处理、增量验证  
-✅ **4个新工具类**: ImageProcessor, WatermarkProcessor, TOCGenerator, ErrorHandler  
-✅ **10+新类型定义**: 增强类型安全  
-✅ **多项用户体验改进**: 错误处理、配置验证、详细日志  
+✅ **更丰富的信息** - 6 个新资源提供全面的系统信息
+✅ **更智能的指导** - 2 个新提示提供场景化的最佳实践
+✅ **更好的可发现性** - 分类和结构化展示便于查找
+✅ **更强的实用性** - 覆盖实际工作流和问题诊断
 
-**总体提升**:
-- 功能更丰富
-- 性能更优秀
-- 代码更健壮
-- 体验更友好
-
----
-
-*文档版本: 1.0*  
-*最后更新: 2025-01-18*
+这些增强使得 MCP 服务器不仅是一个转换工具，更是一个完整的文档处理解决方案！

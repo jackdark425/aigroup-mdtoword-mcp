@@ -7,6 +7,8 @@ import { ImageProcessor } from '../utils/imageProcessor.js';
 import { WatermarkProcessor } from '../utils/watermarkProcessor.js';
 import { TOCGenerator } from '../utils/tocGenerator.js';
 import { ErrorHandler } from '../utils/errorHandler.js';
+import { TableBuilder } from '../utils/tableBuilder.js';
+import { TableData } from '../types/style.js';
 
 // 使用新版docx API
 import {
@@ -830,16 +832,44 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     });
   }
 
+  /**
+   * 创建表格 - 支持新的表格样式和配置
+   * 保持向后兼容旧的TextRun[][][]格式
+   */
   private createTable(rows: TextRun[][][]): Table {
     if (rows.length === 0) return new Table({rows: []});
 
-    const isHeaderRow = (index: number) => index === 0; // 第一行作为表头
+    // 将旧格式转换为新的TableData格式
+    const tableData: TableData = {
+      rows: rows.map(row => row.map(cellContent => ({
+        content: cellContent
+      }))),
+      style: this.effectiveStyleConfig.tableStyles?.default
+    };
+
+    // 使用TableBuilder创建表格
+    return TableBuilder.createTable(tableData, this.effectiveStyleConfig.tableStyles?.default);
+  }
+
+  /**
+   * 从TableData创建表格（新方法）
+   */
+  private createTableFromData(tableData: TableData): Table {
+    return TableBuilder.createTable(tableData, this.effectiveStyleConfig.tableStyles?.default);
+  }
+
+  /**
+   * 创建表格（旧方法，保持兼容）
+   */
+  private createTableLegacy(rows: TextRun[][][]): Table {
+    if (rows.length === 0) return new Table({rows: []});
+
+    const isHeaderRow = (index: number) => index === 0;
     const tableStyle = this.effectiveStyleConfig.tableStyles?.default;
     
-    // 计算列宽
     const columnCount = rows[0]?.length || 0;
     const columnWidths = tableStyle?.columnWidths ||
-      Array(columnCount).fill(Math.floor(10000 / columnCount)); // 平均分配宽度
+      Array(columnCount).fill(Math.floor(10000 / columnCount));
     
     return new Table({
       width: tableStyle?.width || {

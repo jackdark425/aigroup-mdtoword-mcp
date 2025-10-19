@@ -98,11 +98,64 @@ export interface ListStyle extends ParagraphStyle {
 }
 
 /**
+ * 单元格合并配置接口
+ */
+export interface CellMergeConfig {
+  /** 合并的行数 */
+  rowSpan?: number;
+  /** 合并的列数 */
+  colSpan?: number;
+}
+
+/**
+ * 表格单元格配置接口
+ */
+export interface TableCellConfig {
+  /** 单元格内容 */
+  content: string | any[];
+  /** 单元格合并配置 */
+  merge?: CellMergeConfig;
+  /** 单元格样式 */
+  style?: {
+    /** 背景色 */
+    shading?: string;
+    /** 文字样式 */
+    textStyle?: TextStyle;
+    /** 对齐方式 */
+    alignment?: {
+      horizontal?: 'left' | 'center' | 'right';
+      vertical?: 'top' | 'center' | 'bottom';
+    };
+    /** 边框 */
+    borders?: {
+      top?: BorderStyle;
+      bottom?: BorderStyle;
+      left?: BorderStyle;
+      right?: BorderStyle;
+    };
+  };
+  /** 是否为嵌套表格 */
+  nestedTable?: TableData;
+}
+
+/**
+ * 表格数据接口
+ */
+export interface TableData {
+  /** 表格行数据 */
+  rows: TableCellConfig[][];
+  /** 表格样式 */
+  style?: string | TableStyle;
+}
+
+/**
  * 表格样式配置接口
  */
 export interface TableStyle {
   /** 样式名称 */
   name?: string;
+  /** 样式描述 */
+  description?: string;
   /** 表格宽度 */
   width?: {
     /** 宽度值 */
