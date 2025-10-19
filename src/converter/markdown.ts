@@ -8,6 +8,7 @@ import { WatermarkProcessor } from '../utils/watermarkProcessor.js';
 import { TOCGenerator } from '../utils/tocGenerator.js';
 import { ErrorHandler } from '../utils/errorHandler.js';
 import { TableBuilder } from '../utils/tableBuilder.js';
+import { MathProcessor } from '../utils/mathProcessor.js';
 import { TableData } from '../types/style.js';
 
 // 使用新版docx API
@@ -34,6 +35,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
   private effectiveStyleConfig: StyleConfig;
   private errorHandler: ErrorHandler;
   private tocGenerator: TOCGenerator;
+  private mathProcessor: MathProcessor;
 
   constructor(styleConfig?: StyleConfig) {
     const constructorStartTime = Date.now();
@@ -44,6 +46,9 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     
     // 初始化目录生成器
     this.tocGenerator = new TOCGenerator();
+    
+    // 初始化数学公式处理器
+    this.mathProcessor = new MathProcessor();
     
     const mdInitStartTime = Date.now();
     this.md = new MarkdownIt({
@@ -92,8 +97,14 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     const convertStartTime = Date.now();
     console.log(`🚀 [转换器] 开始转换，Markdown长度: ${markdown.length} 字符`);
     
+    // 预处理数学公式
+    const mathStartTime = Date.now();
+    const { processed, mathBlocks } = this.mathProcessor.processMathInMarkdown(markdown);
+    const mathTime = Date.now() - mathStartTime;
+    console.log(`🧮 [数学公式] 预处理耗时: ${mathTime}ms，找到 ${mathBlocks.length} 个数学公式`);
+    
     const parseStartTime = Date.now();
-    const tokens = this.md.parse(markdown, {});
+    const tokens = this.md.parse(processed, {});
     const parseTime = Date.now() - parseStartTime;
     console.log(`⏱️ [转换器] Markdown解析耗时: ${parseTime}ms，生成 ${tokens.length} 个token`);
     
@@ -104,7 +115,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     }
     
     const docCreateStartTime = Date.now();
-    const doc = await this.createDocument(tokens);
+    const doc = await this.createDocument(tokens, mathBlocks);
     const docCreateTime = Date.now() - docCreateStartTime;
     console.log(`⏱️ [转换器] 文档创建耗时: ${docCreateTime}ms`);
     
@@ -125,8 +136,8 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     return buffer;
   }
 
-  private async createDocument(tokens: any[]): Promise<Document> {
-    let children = await this.processTokens(tokens);
+  private async createDocument(tokens: any[], mathBlocks?: Array<{latex: string; startIndex: number; endIndex: number; inline: boolean}>): Promise<Document> {
+    let children = await this.processTokens(tokens, mathBlocks);
     const docStyle = this.effectiveStyleConfig.document;
     
     // 如果启用目录，在内容前插入目录
@@ -476,7 +487,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     };
   }
 
-  private async processTokens(tokens: any[]): Promise<any[]> {
+  private async processTokens(tokens: any[], mathBlocks?: Array<{latex: string; startIndex: number; endIndex: number; inline: boolean}>): Promise<any[]> {
     const children: any[] = [];
     let currentListItems: Paragraph[] = [];
     let inList = false;
@@ -489,13 +500,13 @@ export class DocxMarkdownConverter implements MarkdownConverter {
       switch (token.type) {
         case 'heading_open':
           const level = parseInt(token.tag.slice(1)) as 1|2|3|4|5|6;
-          const headingContent = await this.processInlineContentAsync(tokens[i + 1], level);
+          const headingContent = await this.processInlineContentAsync(tokens[i + 1], level, mathBlocks);
           children.push(this.createHeading(headingContent as TextRun[], level));
           i++; // Skip the next token
           break;
 
         case 'paragraph_open':
-          const paragraphContent = await this.processInlineContentAsync(tokens[i + 1]);
+          const paragraphContent = await this.processInlineContentAsync(tokens[i + 1], undefined, mathBlocks);
           // 如果段落包含图片，需要特殊处理
           if (paragraphContent.some(item => item instanceof ImageRun)) {
             children.push(this.createParagraphWithImages(paragraphContent));
@@ -527,7 +538,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
 
         case 'list_item_open':
           listLevel = (token.attrs && token.attrs.find((attr: any[]) => attr[0] === 'level')?.[1]) || 0;
-          const itemContent = await this.processInlineContentAsync(tokens[i + 2]);
+          const itemContent = await this.processInlineContentAsync(tokens[i + 2], undefined, mathBlocks);
           const listItem = this.createListItem(itemContent as TextRun[], orderedList, listLevel);
           if (inList) {
             currentListItems.push(listItem);
@@ -536,7 +547,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
           break;
 
         case 'table_open':
-          const tableData = await this.extractTableData(tokens, i);
+          const tableData = await this.extractTableData(tokens, i, mathBlocks);
           children.push(this.createTable(tableData.rows));
           i = tableData.endIndex;
           break;
@@ -548,7 +559,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
             quoteTokens.push(tokens[i]);
             i++;
           }
-          const blockquoteContent = await this.processInlineContentAsync(tokens.find(t => t.type === 'inline') || { content: '' });
+          const blockquoteContent = await this.processInlineContentAsync(tokens.find(t => t.type === 'inline') || { content: '' }, undefined, mathBlocks);
           children.push(this.createBlockquote(blockquoteContent as TextRun[]));
           break;
 
@@ -603,32 +614,82 @@ export class DocxMarkdownConverter implements MarkdownConverter {
   }
 
 
-  private async processInlineContentAsync(token: any, headingLevel?: number): Promise<(TextRun | ImageRun)[]> {
-    const runs: (TextRun | ImageRun)[] = [];
+  private async processInlineContentAsync(token: any, headingLevel?: number, mathBlocks?: Array<{latex: string; startIndex: number; endIndex: number; inline: boolean}>): Promise<(TextRun | ImageRun | any)[]> {
+    const runs: (TextRun | ImageRun | any)[] = [];
     
     for (const child of token.children) {
       const baseStyle = this.getTextStyle(headingLevel);
       
       switch (child.type) {
         case 'text':
-          // 处理文本中的转义换行符
-          const textParts = child.content.split(/\\n/);
-          textParts.forEach((part: string, index: number) => {
-            if (part) {
-              runs.push(new TextRun({
-                text: part,
-                ...this.convertTextStyleToDocx(baseStyle)
-              }));
+          // 检查是否包含数学公式占位符
+          const text = child.content;
+          const mathPlaceholderRegex = /\[MATH_(BLOCK|INLINE)_(\d+)\]/g;
+          let lastIndex = 0;
+          let mathMatch;
+          
+          while ((mathMatch = mathPlaceholderRegex.exec(text)) !== null) {
+            // 添加占位符前的文本
+            if (mathMatch.index > lastIndex) {
+              const beforeText = text.substring(lastIndex, mathMatch.index);
+              const textParts = beforeText.split(/\\n/);
+              textParts.forEach((part: string, index: number) => {
+                if (part) {
+                  runs.push(new TextRun({
+                    text: part,
+                    ...this.convertTextStyleToDocx(baseStyle)
+                  }));
+                }
+                if (index < textParts.length - 1) {
+                  runs.push(new TextRun({
+                    text: '',
+                    break: 1,
+                    ...this.convertTextStyleToDocx(baseStyle)
+                  }));
+                }
+              });
             }
-            // 在文本片段之间添加换行
-            if (index < textParts.length - 1) {
-              runs.push(new TextRun({
-                text: '',
-                break: 1,
-                ...this.convertTextStyleToDocx(baseStyle)
-              }));
+            
+            // 处理数学公式
+            const mathIndex = parseInt(mathMatch[2]);
+            const isInline = mathMatch[1] === 'INLINE';
+            if (mathBlocks && mathBlocks[mathIndex]) {
+              const mathBlock = mathBlocks[mathIndex];
+              const mathObj = this.mathProcessor.convertLatexToDocx(mathBlock.latex, { inline: isInline });
+              if (mathObj) {
+                console.log(`🧮 [数学公式] ${isInline ? '行内' : '行间'}公式已转换: ${mathBlock.latex}`);
+                console.log(`   - Math对象类型: ${mathObj.constructor.name}`);
+                console.log(`   - Math对象: ${JSON.stringify(mathObj, null, 2).substring(0, 200)}...`);
+                runs.push(mathObj);
+                console.log(`   - 已添加到runs数组，当前runs长度: ${runs.length}`);
+              } else {
+                console.warn(`   ⚠️ 数学公式转换失败，返回null`);
+              }
             }
-          });
+            
+            lastIndex = mathMatch.index + mathMatch[0].length;
+          }
+          
+          // 添加剩余文本
+          if (lastIndex < text.length) {
+            const remainingText = text.substring(lastIndex);
+            const textParts = remainingText.split(/\\n/);
+            textParts.forEach((part: string, index: number) => {
+              if (part) {
+                runs.push(new TextRun({
+                  text: part,
+                  ...this.convertTextStyleToDocx(baseStyle)
+                }));
+              }
+              if (index < textParts.length - 1) {
+                runs.push(new TextRun({
+                  text: '',
+                  break: 1,
+                  ...this.convertTextStyleToDocx(baseStyle)
+                }));
+              }
+            });
+          }
           break;
         case 'strong':
           const strongStyle = this.mergeTextStyles(baseStyle, this.effectiveStyleConfig.emphasisStyles?.strong || { bold: true });
@@ -1461,7 +1522,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     });
   }
 
-  private async extractTableData(tokens: any[], startIndex: number): Promise<{ rows: any[][][]; endIndex: number }> {
+  private async extractTableData(tokens: any[], startIndex: number, mathBlocks?: Array<{latex: string; startIndex: number; endIndex: number; inline: boolean}>): Promise<{ rows: any[][][]; endIndex: number }> {
     const rows: any[][][] = [];
     let currentRow: any[][] = [];
     let i = startIndex + 1;
@@ -1472,7 +1533,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
       } else if (tokens[i].type === 'tr_close') {
         rows.push(currentRow);
       } else if (tokens[i].type === 'td_open' || tokens[i].type === 'th_open') {
-        const content = await this.processInlineContentAsync(tokens[i + 1]);
+        const content = await this.processInlineContentAsync(tokens[i + 1], undefined, mathBlocks);
         currentRow.push(content as TextRun[]);
         i++; // Skip content token
       }

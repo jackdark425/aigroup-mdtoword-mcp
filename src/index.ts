@@ -15,7 +15,7 @@ import fs from 'fs/promises';
 const server = new McpServer(
   {
     name: 'aigroup-mdtoword-mcp',
-    version: '3.0.2',
+    version: '3.3.0',
   },
   {
     // 启用通知防抖，减少网络流量
