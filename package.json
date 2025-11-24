@@ -26,11 +26,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aigroup/aigroup-mdtoword-mcp.git"
+    "url": "git+https://github.com/jackdark425/aigroup-mdtoword-mcp.git"
   },
-  "homepage": "https://github.com/aigroup/aigroup-mdtoword-mcp",
+  "homepage": "https://github.com/jackdark425/aigroup-mdtoword-mcp",
   "bugs": {
-    "url": "https://github.com/aigroup/aigroup-mdtoword-mcp/issues"
+    "url": "https://github.com/jackdark425/aigroup-mdtoword-mcp/issues"
   },
   "type": "module",
   "main": "dist/index.js",
