@@ -921,13 +921,18 @@ export class DocxMarkdownConverterWorker implements MarkdownConverter {
       italic: codeBlockStyle?.italic
     };
 
+    const lines = code.replace(/\r\n/g, '\n').split('\n');
+    const children = lines.flatMap((line, index) => {
+      const run = new TextRun({
+        text: line.length > 0 ? line : ' ',
+        break: index === 0 ? 0 : 1,
+        ...this.convertTextStyleToDocx(codeTextStyle)
+      });
+      return [run];
+    });
+
     return new Paragraph({
-      children: [
-        new TextRun({
-          text: code,
-          ...this.convertTextStyleToDocx(codeTextStyle)
-        }),
-      ],
+      children,
       spacing: {
         before: codeBlockStyle?.spacing?.before,
         after: codeBlockStyle?.spacing?.after,
