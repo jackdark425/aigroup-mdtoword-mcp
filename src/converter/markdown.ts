@@ -1,5 +1,10 @@
 import MarkdownIt from 'markdown-it';
 import fs from 'fs';
+import mermaid from 'mermaid';
+import createDOMPurify from 'dompurify';
+import { JSDOM } from 'jsdom';
+import { createHTMLWindow } from 'svgdom';
+import { Resvg } from '@resvg/resvg-js';
 import { MarkdownConverter } from '../types/index.js';
 import { StyleConfig, StyleContext, TextStyle, ParagraphStyle, HeadingStyle } from '../types/style.js';
 import { styleEngine } from '../utils/styleEngine.js';
@@ -29,6 +34,31 @@ import {
   NumberFormat,
   TableOfContents
 } from 'docx';
+
+let mermaidRuntimeInitialized = false;
+
+function ensureMermaidRuntime(): void {
+  if (mermaidRuntimeInitialized) {
+    return;
+  }
+
+  const domPurifyWindow = new JSDOM('').window;
+  const DOMPurify = createDOMPurify(domPurifyWindow);
+  Object.assign(createDOMPurify, DOMPurify);
+
+  const svgWindow = createHTMLWindow();
+  (globalThis as any).window = svgWindow;
+  (globalThis as any).document = svgWindow.document;
+
+  mermaid.initialize({
+    htmlLabels: false,
+    flowchart: { htmlLabels: false },
+    startOnLoad: false,
+    securityLevel: 'strict'
+  });
+
+  mermaidRuntimeInitialized = true;
+}
 
 export class DocxMarkdownConverter implements MarkdownConverter {
   private md: MarkdownIt;
@@ -577,7 +607,12 @@ export class DocxMarkdownConverter implements MarkdownConverter {
           break;
 
         case 'fence':
-          children.push(this.createCodeBlock(token.content, token.info));
+          if ((token.info || '').trim().toLowerCase().startsWith('mermaid')) {
+            const mermaidParagraph = await this.createMermaidDiagramParagraph(token.content);
+            children.push(mermaidParagraph || this.createCodeBlock(token.content, token.info));
+          } else {
+            children.push(this.createCodeBlock(token.content, token.info));
+          }
           break;
           
         case 'image':
@@ -1324,6 +1359,43 @@ export class DocxMarkdownConverter implements MarkdownConverter {
       } else {
         console.error(`   - 未知错误类型:`, error);
       }
+      return null;
+    }
+  }
+
+  private async createMermaidDiagramParagraph(code: string): Promise<Paragraph | null> {
+    try {
+      ensureMermaidRuntime();
+
+      const diagramId = `mermaid-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const { svg } = await mermaid.render(diagramId, code);
+      const rendered = new Resvg(svg).render();
+      const pngBuffer = rendered.asPng();
+      const imageBuffer = Buffer.from(pngBuffer);
+      const maxWidth = 600;
+      const scale = rendered.width > maxWidth ? maxWidth / rendered.width : 1;
+      const width = Math.max(120, Math.round(rendered.width * scale));
+      const height = Math.max(80, Math.round(rendered.height * scale));
+
+      return new Paragraph({
+        children: [
+          new ImageRun({
+            type: 'png',
+            data: imageBuffer,
+            transformation: {
+              width,
+              height
+            }
+          })
+        ],
+        spacing: {
+          before: 200,
+          after: 200
+        },
+        alignment: AlignmentType.CENTER
+      });
+    } catch (error) {
+      console.warn('⚠️ Mermaid 渲染失败，将回退为普通代码块:', error instanceof Error ? error.message : String(error));
       return null;
     }
   }
