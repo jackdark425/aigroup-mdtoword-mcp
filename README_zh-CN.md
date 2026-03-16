@@ -31,6 +31,7 @@
 - ✅ **多种图像来源** - 本地文件、网络图片、Base64 编码
 - ✅ **自适应尺寸** - 自动调整图片大小
 - ✅ **格式检测** - 智能识别 PNG、JPEG、GIF、SVG 等格式
+- ✅ **Mermaid 流程图支持** - ```mermaid 代码块可渲染为图片嵌入 Word，失败时自动回退为普通代码块
 - ✅ **错误处理** - 加载失败时显示占位符
 
 ### 🧮 数学公式
@@ -154,6 +155,15 @@ node dist/http-server.js
 {
   "markdown": "# 数学测试\n\n勾股定理：$a^2 + b^2 = c^2$\n\n二次方程求根公式：\n\n$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$",
   "filename": "math-test.docx"
+}
+```
+
+### 包含 Mermaid 流程图
+
+```json
+{
+  "markdown": "# 流程图测试\n\n```mermaid\nflowchart TD\n  A[开始] --> B{参数合法?}\n  B -->|是| C[生成 Word]\n  B -->|否| D[返回错误]\n```",
+  "filename": "mermaid-test.docx"
 }
 ```
 
@@ -361,7 +371,12 @@ $$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$$
 
 ### 常见问题
 
-1. **图片无法显示**
+1. **Mermaid 流程图没有渲染成图片**
+   - 确认代码块语言标记为 `mermaid`
+   - 检查 Mermaid 语法是否正确
+   - 如果当前环境渲染失败，系统会自动回退为普通代码块，不会导致整个文档转换失败
+
+2. **图片无法显示**
    - 检查图片路径是否正确
    - 确保使用 PNG、JPEG、GIF 等常见格式
    - 压缩图片到 5MB 以下

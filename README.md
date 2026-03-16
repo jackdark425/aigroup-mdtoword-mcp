@@ -17,6 +17,7 @@ A comprehensive Model Context Protocol (MCP) server for converting Markdown docu
 - **Mathematical Formulas**: LaTeX math formula support with inline and block rendering
 - **Table Processing**: Advanced table styling with 12+ preset styles, CSV/JSON data import
 - **Image Support**: Local and remote image embedding with automatic scaling and formatting
+- **Mermaid Diagrams**: Render ```mermaid code blocks into diagram images embedded in DOCX, with safe fallback to code blocks if rendering fails
 - **Header & Footer**: Complete header/footer system with page numbers, total pages, and custom content
 - **Table of Contents**: Automatic TOC generation with configurable levels and styling
 - **Watermarks**: Text watermarks with configurable position, rotation, and transparency
@@ -108,6 +109,21 @@ This is a sample report with **bold text** and *italic text*.
 
 Mathematical formula: $E = mc^2$
 ```
+
+### Mermaid Example
+
+````markdown
+# System Flow
+
+```mermaid
+flowchart TD
+  A[Start] --> B{Check input}
+  B -->|Valid| C[Generate DOCX]
+  B -->|Invalid| D[Return error]
+```
+````
+
+Mermaid fenced code blocks are rendered into diagram images in the generated Word document. If rendering fails in the current environment, the content safely falls back to a normal code block.
 
 ### table_data_to_markdown
 Convert structured data (CSV/JSON) to formatted Markdown tables.
@@ -233,6 +249,7 @@ npm test
 Available test scenarios:
 - Mathematical formula conversion
 - Local image embedding
+- Mermaid diagram rendering
 - Page numbering and headers/footers
 - Table styling and data import
 - Complete document conversion
