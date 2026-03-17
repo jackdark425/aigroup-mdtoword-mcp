@@ -2,6 +2,7 @@ import MarkdownIt from 'markdown-it';
 import { MarkdownConverter } from '../types/index.js';
 import { StyleConfig, StyleContext, TextStyle, ParagraphStyle, HeadingStyle } from '../types/style.js';
 import { styleEngine } from '../utils/styleEngine.js';
+import { ImageProcessor } from '../utils/imageProcessor.js';
 import { WatermarkProcessor } from '../utils/watermarkProcessor.js';
 import { TOCGenerator } from '../utils/tocGenerator.js';
 import { ErrorHandler } from '../utils/errorHandler.js';
@@ -573,8 +574,19 @@ export class DocxMarkdownConverterWorker implements MarkdownConverter {
           
         case 'image':
           console.log(`\n📸 [Token处理] 发现图片token`);
-          // 在Worker环境中，跳过图片处理以避免fs依赖问题
-          console.log(`   ⚠️ [Worker版] 图片处理被跳过以兼容Cloudflare环境`);
+          // 在Worker环境中，只处理 Base64 和网络图片（不需要 fs）
+          const imageSrc = token.attrGet('src');
+          if (imageSrc && (imageSrc.startsWith('data:') || imageSrc.startsWith('http'))) {
+            const imageParagraph = await this.createImageParagraph(token);
+            if (imageParagraph) {
+              children.push(imageParagraph);
+              console.log(`   ✅ 图片已添加到文档`);
+            } else {
+              console.error(`   ❌ 图片处理失败，跳过该图片`);
+            }
+          } else {
+            console.log(`   ⚠️ [Worker版] 本地图片处理被跳过以兼容Cloudflare环境: ${imageSrc}`);
+          }
           break;
           
         case 'html_block':
@@ -689,8 +701,16 @@ export class DocxMarkdownConverterWorker implements MarkdownConverter {
           break;
         case 'image':
           console.log(`\n📸 [Inline处理] 发现内联图片`);
-          // 在Worker环境中，跳过图片处理以避免fs依赖问题
-          console.log(`   ⚠️ [Worker版] 内联图片处理被跳过以兼容Cloudflare环境`);
+          // 在Worker环境中，只处理 Base64 和网络图片（不需要 fs）
+          const inlineImageSrc = child.attrGet('src');
+          if (inlineImageSrc && (inlineImageSrc.startsWith('data:') || inlineImageSrc.startsWith('http'))) {
+            const imageRun = await this.createImageRun(child);
+            if (imageRun) {
+              runs.push(imageRun);
+            }
+          } else {
+            console.log(`   ⚠️ [Worker版] 本地内联图片处理被跳过: ${inlineImageSrc}`);
+          }
           break;
           
         case 'html_inline':
@@ -1161,5 +1181,146 @@ export class DocxMarkdownConverterWorker implements MarkdownConverter {
       rows,
       endIndex: i
     };
+  }
+
+  /**
+   * 创建图片 Run（Worker 版本 - 支持 Base64 和网络图片）
+   */
+  private async createImageRun(token: any): Promise<ImageRun | null> {
+    try {
+      const imageStyle = this.effectiveStyleConfig.imageStyles?.default;
+      const src = token.attrGet('src');
+      const alt = token.attrGet('alt') || 'Image';
+      const title = token.attrGet('title') || '';
+      
+      console.log(`🖼️ [Worker图片处理] 开始处理: ${src?.substring(0, 50)}...`);
+      
+      // Worker 环境只处理 Base64 和网络图片
+      if (!src || (!src.startsWith('data:') && !src.startsWith('http'))) {
+        console.log(`   ⚠️ Worker环境跳过本地图片: ${src}`);
+        return null;
+      }
+      
+      // 使用 ImageProcessor 加载图片（Worker 环境不使用 baseDir）
+      const { data: imageData, type: imageType, error: loadError } = await ImageProcessor.loadImageData(src);
+      
+      if (loadError || !imageData || !imageType) {
+        console.error(`   ❌ 图片加载失败: ${loadError || '未知错误'}`);
+        return null;
+      }
+      
+      // 获取 docx 支持的图片类型
+      const docxImageType = ImageProcessor.getDocxImageType(imageType);
+      if (!docxImageType) {
+        console.error(`   ❌ 不支持的图片格式: ${imageType}`);
+        return null;
+      }
+      
+      const dimensions = ImageProcessor.calculateDimensions(undefined, undefined, imageStyle);
+      
+      // 创建 ImageRun 配置
+      const imageRunConfig = docxImageType === 'svg' ? {
+        type: 'svg' as const,
+        data: imageData,
+        transformation: dimensions,
+        altText: { title, description: token.content || '', name: alt },
+        fallback: { type: 'png' as const, data: ImageProcessor.getTransparentPng() }
+      } : {
+        type: docxImageType,
+        data: imageData,
+        transformation: dimensions,
+        altText: { title, description: token.content || '', name: alt }
+      };
+      
+      return new ImageRun(imageRunConfig as any);
+    } catch (error) {
+      console.error(`❌ [Worker图片处理] 失败:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 创建图片段落（Worker 版本）
+   */
+  private async createImageParagraph(token: any): Promise<Paragraph | null> {
+    try {
+      const imageStyle = this.effectiveStyleConfig.imageStyles?.default;
+      const src = token.attrGet('src');
+      const alt = token.attrGet('alt') || 'Image';
+      
+      console.log(`🖼️ [Worker图片段落] 开始处理: ${src?.substring(0, 50)}...`);
+      
+      // Worker 环境只处理 Base64 和网络图片
+      if (!src || (!src.startsWith('data:') && !src.startsWith('http'))) {
+        console.log(`   ⚠️ Worker环境跳过本地图片: ${src}`);
+        return null;
+      }
+      
+      // 加载图片
+      const { data: imageData, type: imageType, error: loadError } = await ImageProcessor.loadImageData(src);
+      
+      if (loadError || !imageData || !imageType) {
+        console.error(`   ❌ 图片加载失败: ${loadError || '未知错误'}`);
+        return null;
+      }
+      
+      // 获取 docx 支持的图片类型
+      const docxImageType = ImageProcessor.getDocxImageType(imageType);
+      if (!docxImageType) {
+        console.error(`   ❌ 不支持的图片格式: ${imageType}`);
+        return null;
+      }
+      
+      // 处理图片数据
+      let processedImageData: Buffer | string;
+      if (src.startsWith('data:')) {
+        processedImageData = imageData as string;
+      } else {
+        processedImageData = imageData as Buffer;
+      }
+      
+      // 创建 ImageRun
+      const imageRunConfig = docxImageType === 'svg' ? {
+        type: 'svg' as const,
+        data: processedImageData,
+        transformation: {
+          width: imageStyle?.width || 400,
+          height: imageStyle?.height || (imageStyle?.width || 400) * 0.667,
+        },
+        altText: {
+          title: token.attrGet('title') || '',
+          description: token.content || '',
+          name: alt
+        },
+        fallback: { type: 'png' as const, data: ImageProcessor.getTransparentPng() }
+      } : {
+        type: docxImageType,
+        data: processedImageData,
+        transformation: {
+          width: imageStyle?.width || 400,
+          height: imageStyle?.height || (imageStyle?.width || 400) * 0.667,
+        },
+        altText: {
+          title: token.attrGet('title') || '',
+          description: token.content || '',
+          name: alt
+        }
+      };
+      
+      const imageRun = new ImageRun(imageRunConfig as any);
+      
+      // 创建段落
+      return new Paragraph({
+        children: [imageRun],
+        alignment: imageStyle?.alignment || 'center',
+        spacing: {
+          before: imageStyle?.spacing?.before || 100,
+          after: imageStyle?.spacing?.after || 100
+        }
+      });
+    } catch (error) {
+      console.error(`❌ [Worker图片段落] 失败:`, error);
+      return null;
+    }
   }
 }

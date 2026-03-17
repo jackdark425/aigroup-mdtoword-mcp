@@ -227,7 +227,9 @@ function createMcpServer() {
           }
         }
 
-        const converter = new DocxMarkdownConverter(finalStyleConfig as any);
+        // 传递 baseDir 以支持相对路径图片
+        const baseDir = args.inputPath ? path.dirname(args.inputPath) : process.cwd();
+        const converter = new DocxMarkdownConverter(finalStyleConfig as any, baseDir);
         const docxContent = await converter.convert(markdownContent);
 
         const outputPath = args.outputPath || process.cwd();

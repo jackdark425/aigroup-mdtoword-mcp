@@ -617,10 +617,16 @@ export class DocxMarkdownConverter implements MarkdownConverter {
           
         case 'image':
           console.log(`\n📸 [Token处理] 发现图片token`);
-          const imageParagraph = await this.createImageParagraph(token);
-          if (imageParagraph) {
-            children.push(imageParagraph);
-            console.log(`   ✅ 图片已添加到文档`);
+          const imageResult = await this.createImageParagraph(token);
+          if (imageResult) {
+            // 支持返回单个段落或段落数组（包含标题）
+            if (Array.isArray(imageResult)) {
+              children.push(...imageResult);
+              console.log(`   ✅ 图片及标题已添加到文档`);
+            } else {
+              children.push(imageResult);
+              console.log(`   ✅ 图片已添加到文档`);
+            }
           } else {
             console.error(`   ❌ 图片处理失败，跳过该图片`);
           }
@@ -647,9 +653,13 @@ export class DocxMarkdownConverter implements MarkdownConverter {
                 return attr ? attr[1] : null;
               }
             };
-            const htmlImageParagraph = await this.createImageParagraph(imgToken);
-            if (htmlImageParagraph) {
-              children.push(htmlImageParagraph);
+            const htmlImageResult = await this.createImageParagraph(imgToken);
+            if (htmlImageResult) {
+              if (Array.isArray(htmlImageResult)) {
+                children.push(...htmlImageResult);
+              } else {
+                children.push(htmlImageResult);
+              }
               console.log(`   ✅ HTML图片已添加到文档`);
             }
           }
@@ -1281,9 +1291,16 @@ export class DocxMarkdownConverter implements MarkdownConverter {
       const dimensions = ImageProcessor.calculateDimensions(undefined, undefined, imageStyle);
       console.log(`   - 计算尺寸: ${dimensions.width}x${dimensions.height}`);
 
+      // 获取 docx 支持的图片类型（处理 webp 等格式映射）
+      const docxImageType = ImageProcessor.getDocxImageType(imageType);
+      if (!docxImageType) {
+        console.error(`   ❌ 不支持的图片格式映射: ${imageType}`);
+        return this.createPlaceholderImageRun(src, alt, title, `格式不支持: ${imageType}`, dimensions);
+      }
+
       // 创建图片运行对象
       console.log(`   - 创建ImageRun对象...`);
-      const imageRunConfig = imageType === 'svg' ? {
+      const imageRunConfig = docxImageType === 'svg' ? {
         type: 'svg' as const,
         data: imageData,
         transformation: dimensions,
@@ -1294,10 +1311,10 @@ export class DocxMarkdownConverter implements MarkdownConverter {
         },
         fallback: {
           type: 'png' as const,
-          data: Buffer.from('') // 空缓冲区作为占位符
+          data: ImageProcessor.getTransparentPng() // 使用最小透明PNG
         }
       } : {
-        type: imageType as 'jpg' | 'png' | 'gif' | 'bmp',
+        type: docxImageType,
         data: imageData,
         transformation: dimensions,
         altText: {
@@ -1400,7 +1417,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
     }
   }
 
-  private async createImageParagraph(token: any): Promise<Paragraph | null> {
+  private async createImageParagraph(token: any): Promise<Paragraph | Paragraph[] | null> {
     const imageStartTime = Date.now();
     try {
       const imageStyle = this.effectiveStyleConfig.imageStyles?.default;
@@ -1443,9 +1460,16 @@ export class DocxMarkdownConverter implements MarkdownConverter {
         console.log(`   - 图片数据大小: ${processedImageData.length} 字节`);
       }
 
+      // 获取 docx 支持的图片类型（处理 webp 等格式映射）
+      const docxImageType = ImageProcessor.getDocxImageType(imageType);
+      if (!docxImageType) {
+        console.error(`   ❌ 不支持的图片格式映射: ${imageType}`);
+        return null;
+      }
+
       // 创建图片运行对象
       console.log(`   - 创建ImageRun对象...`);
-      const imageRunConfig = imageType === 'svg' ? {
+      const imageRunConfig = docxImageType === 'svg' ? {
         type: 'svg' as const,
         data: processedImageData,
         transformation: {
@@ -1459,10 +1483,10 @@ export class DocxMarkdownConverter implements MarkdownConverter {
         },
         fallback: {
           type: 'png' as const,
-          data: Buffer.from('') // 空缓冲区作为占位符
+          data: ImageProcessor.getTransparentPng() // 使用最小透明PNG
         }
       } : {
-        type: imageType as 'jpg' | 'png' | 'gif' | 'bmp',
+        type: docxImageType,
         data: processedImageData,
         transformation: {
           width: imageStyle?.width || 400,
@@ -1511,6 +1535,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
         return null;
       }
 
+      // 创建图片段落
       const paragraph = new Paragraph({
         children: [imageRun],
         alignment: imageStyle?.alignment || 'center',
@@ -1519,23 +1544,28 @@ export class DocxMarkdownConverter implements MarkdownConverter {
           after: imageStyle?.spacing?.after || 100
         }
       });
-      console.log(`   ✅ 图片段落创建成功`);
-
-      // 处理图片标题
-      if (title) {
-        console.log(`   - 添加图片标题: ${title}`);
-        // 注意：这里返回的应该是一个包含图片和标题的数组，而不是嵌套的Paragraph
-        // 这可能是个bug，应该返回两个独立的段落
-        const captionParagraph = new Paragraph({
-          text: title,
-          alignment: 'center',
-          style: 'ImageCaption'
-        });
-        console.log(`   ⚠️ 警告：图片标题处理可能有问题，需要返回段落数组而不是嵌套段落`);
-      }
 
       const processTime = Date.now() - imageStartTime;
-      console.log(`   ✅ 图片处理完成，总耗时: ${processTime}ms`);
+      console.log(`   ✅ 图片段落创建成功，耗时: ${processTime}ms`);
+
+      // 处理图片标题 - 如果有标题，返回包含图片和标题的数组
+      if (title) {
+        console.log(`   - 添加图片标题: ${title}`);
+        const captionParagraph = new Paragraph({
+          children: [new TextRun({
+            text: title,
+            italics: true,
+            size: 20  // 10pt = 20半点
+          })],
+          alignment: 'center',
+          spacing: {
+            before: 50,
+            after: 100
+          }
+        });
+        return [paragraph, captionParagraph];
+      }
+
       return paragraph;
     } catch (error) {
       const processTime = Date.now() - imageStartTime;
@@ -1583,7 +1613,7 @@ export class DocxMarkdownConverter implements MarkdownConverter {
       },
       fallback: {
         type: 'png',
-        data: Buffer.from('') // 空缓冲区作为占位符
+        data: ImageProcessor.getTransparentPng() // 使用最小透明PNG
       }
     });
   }

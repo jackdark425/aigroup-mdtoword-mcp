@@ -1,20 +1,24 @@
 import { DocxMarkdownConverter } from '../src/converter/markdown.js';
 import fs from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function testLocalImages() {
   console.log('🧪 开始测试本地图片嵌入功能...\n');
   
   try {
     // 读取测试markdown文件
-    const markdownPath = path.join(process.cwd(), 'test-image-embed.md');
+    const markdownPath = path.join(__dirname, 'test-image-embed.md');
     const markdown = await fs.readFile(markdownPath, 'utf-8');
     console.log('✅ 成功读取测试markdown文件');
     console.log(`📄 Markdown内容长度: ${markdown.length} 字符\n`);
     
-    // 创建转换器
+    // 创建转换器，传入 baseDir 以解析相对路径图片
     console.log('🔧 创建Markdown转换器...');
-    const converter = new DocxMarkdownConverter();
+    const converter = new DocxMarkdownConverter(undefined, __dirname);
     console.log('✅ 转换器创建成功\n');
     
     // 执行转换
@@ -24,7 +28,7 @@ async function testLocalImages() {
     console.log(`📦 生成的DOCX文件大小: ${docxBuffer.length} 字节\n`);
     
     // 保存文件
-    const outputPath = path.join(process.cwd(), 'test-output.docx');
+    const outputPath = path.join(__dirname, 'test-output.docx');
     await fs.writeFile(outputPath, docxBuffer);
     console.log(`💾 文件已保存到: ${outputPath}`);
     console.log('\n✅ 测试完成！');
