@@ -271,9 +271,24 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 4. Add tests
 5. Submit a pull request
 
-## 📄 License
+## 📄 License & Usage
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is released under the **MIT License**.
+
+In practical terms, MIT allows you to:
+
+- use this project in personal, internal, academic, or commercial scenarios
+- copy, modify, merge, publish, and distribute the code
+- build proprietary or open-source products on top of it
+- ship derivative works as long as the required copyright and license notice is preserved
+
+Please keep in mind:
+
+- **you must retain** the original copyright notice and MIT license text in copies or substantial portions of the software
+- **the software is provided "AS IS"**, without warranty of any kind
+- if you package this project into hosted services, desktop tools, plugins, or internal workflows, you are responsible for your own compliance, security review, and downstream usage constraints
+
+See the full text in [LICENSE](LICENSE).
 
 ## 🙏 Acknowledgments
 
@@ -321,7 +336,7 @@ For detailed deployment instructions, see [docs/DEPLOYMENT_INSTRUCTIONS.md](./do
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/aigroup/aigroup-mdtoword-mcp/issues)
+- **Issues**: [GitHub Issues](https://github.com/jackdark425/aigroup-mdtoword-mcp/issues)
 - **Documentation**: [Full Documentation](docs/README.md)
 - **Examples**: [Example Files](examples/)
 
