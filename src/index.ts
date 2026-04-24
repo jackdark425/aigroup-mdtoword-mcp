@@ -16,7 +16,17 @@ const fileSystem = {
   cwd: process.cwd
 };
 
+function redirectConsoleToStderr() {
+  const toStderr = (...args: unknown[]) => process.stderr.write(args.join(' ') + '\n');
+  console.log = toStderr;
+  console.info = toStderr;
+  console.debug = toStderr;
+  console.warn = toStderr;
+}
+
 async function main() {
+  redirectConsoleToStderr();
+
   const server = createMcpServer({
     name: 'aigroup-mdtoword-mcp',
     version: '4.0.2',
